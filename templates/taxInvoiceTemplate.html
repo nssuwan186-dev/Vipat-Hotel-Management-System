@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>ใบเสร็จรับเงิน / ใบกำกับภาษี</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; font-size: 12px; line-height: 1.6; margin: 0; padding: 0; background-color: #f7f7f7; color: #333; }
+        .page { width: 210mm; min-height: 297mm; margin: 20px auto; background: white; box-shadow: 0 0 15px rgba(0,0,0,0.1); padding: 40px; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 20px; border-bottom: 4px solid #4a90e2; }
+        .header-left .company-name { font-size: 24px; font-weight: 700; color: #4a90e2; margin-bottom: 5px; }
+        .header-left .branch { font-weight: 700; }
+        .header-right .doc-type { font-size: 24px; font-weight: 700; color: #333; text-align: right; }
+        .header-right .original { font-size: 14px; text-align: right; }
+        .doc-title { text-align: center; font-size: 20px; font-weight: 700; margin: 20px 0 30px 0; letter-spacing: 1px; }
+        .info-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
+        .customer-info { border: 1px solid #eee; border-radius: 8px; padding: 15px; width: 55%; background: #fcfcfc; }
+        .invoice-info { text-align: right; }
+        .info-section strong { font-weight: 700; }
+        .item-table { width: 100%; text-align: left; border-collapse: collapse; margin-top: 20px; border-radius: 8px; overflow: hidden; }
+        .item-table thead { background: #4a90e2; color: white; }
+        .item-table th, .item-table td { padding: 12px 15px; }
+        .item-table tbody tr { border-bottom: 1px solid #eee; }
+        .item-table tbody tr:last-child { border-bottom: none; }
+        .summary-section { display: flex; justify-content: space-between; align-items: flex-start; margin-top: 20px; }
+        .amount-in-words-container { width: 60%; background: #f2f7ff; border-radius: 8px; padding: 15px; font-weight: 700; text-align: center; color: #333; }
+        .summary-table { width: 38%; }
+        .summary-table td { padding: 8px 10px; }
+        .summary-table tr:last-child td { font-weight: 700; font-size: 14px; }
+        .summary-table .label { text-align: right; }
+        .summary-table .total { background: #eaf2fd; font-weight: 700; color: #4a90e2; }
+        .footer { margin-top: 50px; padding-top: 20px; display: flex; justify-content: space-around; text-align: center; border-top: 1px solid #eee; }
+        .signature-box { width: 220px; padding-top: 50px; border-top: 1px solid #333; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <header class="header">
+            <div class="header-left">
+                <div class="company-name">{{COMPANY_NAME}}</div>
+                <div class="branch">(สำนักงานใหญ่)</div>
+                <div>{{COMPANY_ADDRESS}}</div>
+                <div>โทร: {{COMPANY_PHONE}}</div>
+                <div>เลขประจำตัวผู้เสียภาษีอากร: {{COMPANY_TAX_ID}}</div>
+            </div>
+            <div class="header-right">
+                <div class="doc-type">ใบเสร็จรับเงิน / ใบกำกับภาษี</div>
+                <div class="original">ต้นฉบับ</div>
+            </div>
+        </header>
+
+        <section class="info-section">
+            <div class="customer-info">
+                <strong>ลูกค้า:</strong> {{CUSTOMER_NAME}}<br>
+                <strong>เบอร์โทร:</strong> {{CUSTOMER_PHONE}}
+            </div>
+            <div class="invoice-info">
+                <strong>เลขที่เอกสาร:</strong> {{INVOICE_ID}}<br>
+                <strong>วันที่:</strong> {{DATE}}
+            </div>
+        </section>
+
+        <table class="item-table">
+            <thead>
+                <tr>
+                    <th>ลำดับ</th>
+                    <th style="width: 50%;">รายการ</th>
+                    <th>ระยะเวลา</th>
+                    <th style="text-align: right;">จำนวนเงิน</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="text-align: center;">1</td>
+                    <td>{{ITEM_DESCRIPTION}}</td>
+                    <td style="text-align: center;">{{ITEM_DURATION}}</td>
+                    <td style="text-align: right;">{{TOTAL_AMOUNT_FORMATTED}}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <section class="summary-section">
+            <div class="amount-in-words-container">
+                <span>({{AMOUNT_IN_WORDS}})</span>
+            </div>
+            <table class="summary-table">
+                <tr>
+                    <td class="label">มูลค่าสินค้ารวม</td>
+                    <td style="text-align: right;">{{SUBTOTAL_NO_VAT_FORMATTED}}</td>
+                </tr>
+                <tr>
+                    <td class="label">ภาษีมูลค่าเพิ่ม 7%</td>
+                    <td style="text-align: right;">{{VAT_AMOUNT_FORMATTED}}</td>
+                </tr>
+                <tr class="total">
+                    <td class="label">ยอดรวมสุทธิ</td>
+                    <td style="text-align: right;">{{TOTAL_AMOUNT_FORMATTED}}</td>
+                </tr>
+            </table>
+        </section>
+        
+        <footer class="footer">
+            <div>
+                <div>...........................................</div>
+                <div class="signature-box">ผู้รับเงิน</div>
+                <div>วันที่ ..... / ..... / .....</div>
+            </div>
+            <div>
+                 <div>...........................................</div>
+                <div class="signature-box">ผู้จ่ายเงิน</div>
+                <div>วันที่ ..... / ..... / .....</div>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
