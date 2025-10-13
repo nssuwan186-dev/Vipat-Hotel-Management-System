@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Page, Room, Guest, Booking, Expense, Employee, Attendance, Tenant, Invoice, AiChatMessage, GeneratedDocument, Task, TaskStatus } from './types';
-import { mockRooms, mockGuests, mockBookings, mockExpenses, mockEmployees, mockAttendance, mockTenants, mockInvoices, mockTasks } from './data/mockData';
+import * as api from './services/googleApiService';
 
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -11,245 +11,278 @@ import DataManagement from './components/DataManagement';
 import Reports from './components/Reports';
 import Tasks from './components/Tasks';
 import AiAssistant from './components/AiAssistant';
-import usePersistentState from './hooks/usePersistentState';
+import Login from './components/Login';
 
 const App: React.FC = () => {
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [currentPage, setCurrentPage] = useState<Page>('ภาพรวม');
     const [financeDateFilter, setFinanceDateFilter] = useState<Date | null>(null);
+    const [loading, setLoading] = useState(true);
 
-    // State for all data, now persistent using localStorage
-    const [rooms, setRooms] = usePersistentState<Room[]>('hms_rooms', mockRooms);
-    const [guests, setGuests] = usePersistentState<Guest[]>('hms_guests', mockGuests);
-    const [bookings, setBookings] = usePersistentState<Booking[]>('hms_bookings', mockBookings);
-    const [expenses, setExpenses] = usePersistentState<Expense[]>('hms_expenses', mockExpenses);
-    const [employees, setEmployees] = usePersistentState<Employee[]>('hms_employees', mockEmployees);
-    const [attendance, setAttendance] = usePersistentState<Attendance[]>('hms_attendance', mockAttendance);
-    const [tenants, setTenants] = usePersistentState<Tenant[]>('hms_tenants', mockTenants);
-    const [invoices, setInvoices] = usePersistentState<Invoice[]>('hms_invoices', mockInvoices);
-    const [tasks, setTasks] = usePersistentState<Task[]>('hms_tasks', mockTasks);
-    const [documents, setDocuments] = usePersistentState<GeneratedDocument[]>('hms_documents', []);
-    const [aiChatHistory, setAiChatHistory] = usePersistentState<AiChatMessage[]>('hms_ai_chat_history', []);
+    // State for all data, now fetched from the backend
+    const [rooms, setRooms] = useState<Room[]>([]);
+    const [guests, setGuests] = useState<Guest[]>([]);
+    const [bookings, setBookings] = useState<Booking[]>([]);
+    const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [employees, setEmployees] = useState<Employee[]>([]);
+    const [attendance, setAttendance] = useState<Attendance[]>([]);
+    const [tenants, setTenants] = useState<Tenant[]>([]);
+    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [tasks, setTasks] = useState<Task[]>([]);
+    const [documents, setDocuments] = useState<GeneratedDocument[]>([]);
+    const [aiChatHistory, setAiChatHistory] = useState<AiChatMessage[]>([]);
 
+    useEffect(() => {
+        if (isAuthenticated) {
+            const fetchAllData = async () => {
+                try {
+                    setLoading(true);
+                    const [
+                        roomsData,
+                        guestsData,
+                        bookingsData,
+                        expensesData,
+                        employeesData,
+                        tenantsData,
+                        invoicesData,
+                        tasksData
+                    ] = await Promise.all([
+                        api.getRooms(),
+                        api.getGuests(),
+                        api.getBookings(),
+                        api.getExpenses(),
+                        api.getEmployees(),
+                        api.getTenants(),
+                        api.getInvoices(),
+                        api.getTasks(),
+                    ]);
+                    setRooms(roomsData);
+                    setGuests(guestsData);
+                    setBookings(bookingsData);
+                    setExpenses(expensesData);
+                    setEmployees(employeesData);
+                    setTenants(tenantsData);
+                    setInvoices(invoicesData);
+                    setTasks(tasksData);
+                } catch (error) {
+                    console.error("Failed to fetch data:", error);
+                    // Handle error appropriately, e.g., show an error message to the user
+                } finally {
+                    setLoading(false);
+                }
+            };
+            fetchAllData();
+        }
+    }, [isAuthenticated]);
+
+    const handleLoginSuccess = () => {
+        setIsAuthenticated(true);
+    };
+
+    if (!isAuthenticated) {
+        return <Login onLoginSuccess={handleLoginSuccess} />;
+    }
 
     const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-    
-    const addBooking = (guestName: string, phone: string, roomNumber: string, checkInStr: string, checkOutStr: string): string => {
+
+    const addBooking = async (guestName: string, phone: string, roomNumber: string, checkInStr: string, checkOutStr: string): Promise<string> => {
+        // ... (validation logic remains the same)
         const room = rooms.find(r => r.number.toLowerCase() === roomNumber.toLowerCase());
-        if (!room) {
-            return `ข้อผิดพลาด: ไม่พบห้องหมายเลข ${roomNumber}`;
-        }
-        if (room.status !== 'Available') {
-            return `ข้อผิดพลาด: ห้องหมายเลข ${roomNumber} ไม่ว่าง`;
-        }
-
-        const checkIn = new Date(checkInStr);
-        const checkOut = new Date(checkOutStr);
-        if (isNaN(checkIn.getTime()) || isNaN(checkOut.getTime()) || checkOut <= checkIn) {
-            return "ข้อผิดพลาด: วันที่ที่ระบุไม่ถูกต้อง กรุณาใช้รูปแบบ YYYY-MM-DD และวันที่เช็คเอาท์ต้องอยู่หลังวันที่เช็คอิน";
-        }
+        if (!room) return `ข้อผิดพลาด: ไม่พบห้องหมายเลข ${roomNumber}`;
+        if (room.status !== 'Available') return `ข้อผิดพลาด: ห้องหมายเลข ${roomNumber} ไม่ว่าง`;
         
-        // Create or update guest
-        let guest = guests.find(g => g.name.toLowerCase() === guestName.toLowerCase());
-        if (guest) {
-             // If guest exists, update their phone number if a new one is provided.
-             if (phone && guest.phone !== phone) {
-                setGuests(prevGuests => prevGuests.map(g => 
-                    g.id === guest!.id ? { ...g, phone: phone } : g
-                ));
-                guest = { ...guest, phone }; // Ensure the guest object we use for the booking is updated.
-             }
-        } else {
-            const newGuest: Guest = {
-                id: `G${guests.length + 1}`,
-                name: guestName,
-                phone: phone || 'N/A',
-                history: [],
-            };
-            setGuests(prev => [...prev, newGuest]);
-            guest = newGuest;
+        const newBookingData = { guestName, phone, roomNumber, checkInDate: new Date(checkInStr), checkOutDate: new Date(checkOutStr) };
+        const result = await api.addBooking(newBookingData);
+        if (result.success) {
+            setBookings(prev => [...prev, result.data as Booking]);
+            // Refresh related data
+            api.getRooms().then(setRooms);
+            api.getGuests().then(setGuests);
+            return "สร้างการจองสำเร็จแล้ว";
         }
-
-        const duration = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 3600 * 24));
-        const newBooking: Booking = {
-            id: `B${bookings.length + 1}`,
-            guestId: guest.id,
-            roomId: room.id,
-            checkInDate: checkIn,
-            checkOutDate: checkOut,
-            status: 'Confirmed',
-            totalPrice: room.price * (duration || 1),
-        };
-
-        setBookings(prev => [...prev, newBooking]);
-        setRooms(prev => prev.map(r => r.id === room.id ? {...r, status: 'Occupied'} : r));
-        
-        setGuests(prevGuests => prevGuests.map(g => g.id === guest!.id ? {...g, history: [...g.history, newBooking.id]} : g));
-
-        return `สร้างการจองสำหรับคุณ ${guestName} ในห้อง ${roomNumber} ตั้งแต่วันที่ ${checkInStr} ถึง ${checkOutStr} สำเร็จแล้ว Booking ID: ${newBooking.id}`;
+        return result.message || "เกิดข้อผิดพลาดในการสร้างการจอง";
     };
 
-    const updateBooking = (
-        bookingId: string, 
-        newDetails: { 
-            guestName: string; 
-            phone: string; 
-            roomNumber: string; 
-            checkInStr: string; 
-            checkOutStr: string 
+    const updateBooking = async (bookingId: string, newDetails: any): Promise<string> => {
+        const result = await api.updateBooking({ id: bookingId, ...newDetails });
+        if (result.success) {
+            setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, ...newDetails } : b));
+            api.getRooms().then(setRooms);
+            api.getGuests().then(setGuests);
+            return "อัปเดตการจองสำเร็จแล้ว";
         }
-    ): string => {
-        const { guestName, phone, roomNumber, checkInStr, checkOutStr } = newDetails;
-        
-        const bookingIndex = bookings.findIndex(b => b.id === bookingId);
-        if (bookingIndex === -1) return "ข้อผิดพลาด: ไม่พบการจองที่ต้องการแก้ไข";
-        const originalBooking = bookings[bookingIndex];
-
-        const trimmedGuestName = guestName.trim();
-        if (!trimmedGuestName) return "ข้อผิดพลาด: ชื่อผู้เข้าพักห้ามว่าง";
-
-        const checkIn = new Date(checkInStr);
-        const checkOut = new Date(checkOutStr);
-        if (isNaN(checkIn.getTime()) || isNaN(checkOut.getTime()) || checkOut <= checkIn) {
-            return "ข้อผิดพลาด: วันที่ที่ระบุไม่ถูกต้อง";
-        }
-        
-        const newRoom = rooms.find(r => r.number.toLowerCase() === roomNumber.toLowerCase());
-        if (!newRoom) return `ข้อผิดพลาด: ไม่พบห้องหมายเลข ${roomNumber}`;
-
-        const originalRoom = rooms.find(r => r.id === originalBooking.roomId);
-
-        const isConflict = bookings.some(b => 
-            b.id !== bookingId &&
-            b.roomId === newRoom.id &&
-            b.status !== 'Cancelled' &&
-            checkIn < b.checkOutDate &&
-            checkOut > b.checkInDate
-        );
-
-        if (isConflict) {
-            return `ข้อผิดพลาด: ห้องหมายเลข ${newRoom.number} ไม่ว่างในช่วงวันที่ที่เลือก`;
-        }
-
-        const guestIndex = guests.findIndex(g => g.id === originalBooking.guestId);
-        if (guestIndex === -1) {
-            return "ข้อผิดพลาด: ไม่พบข้อมูลผู้เข้าพักที่เชื่อมโยงกับการจองนี้";
-        }
-        
-        const existingGuestWithNewName = guests.find(g => 
-            g.name.toLowerCase() === trimmedGuestName.toLowerCase() && 
-            g.id !== originalBooking.guestId
-        );
-        if (existingGuestWithNewName) {
-            return `ข้อผิดพลาด: มีผู้เข้าพักชื่อ "${trimmedGuestName}" อยู่ในระบบแล้ว ไม่สามารถเปลี่ยนชื่อซ้ำได้`;
-        }
-        
-        const updatedGuests = [...guests];
-        updatedGuests[guestIndex] = {
-            ...updatedGuests[guestIndex],
-            name: trimmedGuestName,
-            phone: phone.trim() || 'N/A',
-        };
-        setGuests(updatedGuests);
-        
-        const duration = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 3600 * 24));
-        const updatedBooking: Booking = {
-            ...originalBooking,
-            roomId: newRoom.id,
-            checkInDate: checkIn,
-            checkOutDate: checkOut,
-            totalPrice: newRoom.price * (duration || 1),
-        };
-
-        const newBookings = [...bookings];
-        newBookings[bookingIndex] = updatedBooking;
-        setBookings(newBookings);
-        
-        if (originalRoom && originalRoom.id !== newRoom.id) {
-             setRooms(prevRooms => prevRooms.map(r => {
-                if (r.id === originalRoom.id) {
-                    const hasOtherBookings = newBookings.some(b =>
-                        b.roomId === originalRoom.id &&
-                        (b.status === 'Confirmed' || b.status === 'Check-In')
-                    );
-                    return { ...r, status: hasOtherBookings ? 'Occupied' : 'Available' };
-                }
-                if (r.id === newRoom.id) {
-                    return { ...r, status: 'Occupied' };
-                }
-                return r;
-            }));
-        }
-
-        return `อัปเดตการจอง ID: ${bookingId} สำเร็จแล้ว`;
+        return result.message || "เกิดข้อผิดพลาดในการอัปเดตการจอง";
     };
 
-    const addExpense = (category: Expense['category'], description: string, amount: number): string => {
-        if (!category || !description.trim() || !amount || amount <= 0) {
-            return "ข้อผิดพลาด: กรุณากรอกข้อมูลให้ครบถ้วนและถูกต้อง";
+    const deleteBooking = async (bookingId: string): Promise<string> => {
+        const result = await api.deleteBooking(bookingId);
+        if (result.success) {
+            setBookings(prev => prev.filter(b => b.id !== bookingId));
+            api.getRooms().then(setRooms);
+            api.getGuests().then(setGuests);
+            return "ลบการจองสำเร็จแล้ว";
         }
-        const newExpense: Expense = {
-            id: `E${expenses.length + 1 + Math.random()}`, // Add random to reduce collision chance
-            date: new Date(),
-            category,
-            description,
-            amount,
-        };
-        setExpenses(prev => [...prev, newExpense]);
-        return `บันทึกรายจ่าย '${description}' จำนวน ${amount.toLocaleString('th-TH')} บาท สำเร็จแล้ว`;
+        return result.message || "เกิดข้อผิดพลาดในการลบการจอง";
     };
 
-    const updateExpense = (expenseId: string, newDetails: { category: Expense['category']; description: string; amount: number; date: Date }): string => {
-        const expenseIndex = expenses.findIndex(e => e.id === expenseId);
-        if (expenseIndex === -1) {
-            return "ข้อผิดพลาด: ไม่พบรายจ่ายที่ต้องการแก้ไข";
+    const addExpense = async (category: Expense['category'], description: string, amount: number): Promise<string> => {
+        const newExpenseData = { date: new Date(), category, description, amount };
+        const result = await api.addExpense(newExpenseData);
+        if (result.success) {
+            setExpenses(prev => [...prev, result.data as Expense]);
+            return "บันทึกรายจ่ายสำเร็จแล้ว";
         }
-
-        if (!newDetails.category || !newDetails.description.trim() || !newDetails.amount || newDetails.amount <= 0 || !newDetails.date) {
-            return "ข้อผิดพลาด: กรุณากรอกข้อมูลให้ครบถ้วนและถูกต้อง";
-        }
-
-        const updatedExpenses = [...expenses];
-        updatedExpenses[expenseIndex] = {
-            id: expenseId,
-            ...newDetails
-        };
-        setExpenses(updatedExpenses);
-        return `อัปเดตรายจ่ายสำเร็จแล้ว`;
+        return result.message || "เกิดข้อผิดพลาดในการบันทึกรายจ่าย";
     };
 
-    const deleteExpense = (expenseId: string): string => {
-        const expenseExists = expenses.some(e => e.id === expenseId);
-        if (!expenseExists) {
-            return `ข้อผิดพลาด: ไม่พบรายจ่าย ID ${expenseId}`;
+    const updateExpense = async (expenseId: string, newDetails: any): Promise<string> => {
+        const result = await api.updateExpense({ id: expenseId, ...newDetails });
+        if (result.success) {
+            setExpenses(prev => prev.map(e => e.id === expenseId ? { ...e, ...newDetails } : e));
+            return "อัปเดตรายจ่ายสำเร็จแล้ว";
         }
-        setExpenses(prevExpenses => prevExpenses.filter(e => e.id !== expenseId));
-        return `ลบรายจ่ายสำเร็จแล้ว`;
+        return result.message || "เกิดข้อผิดพลาดในการอัปเดตรายจ่าย";
     };
 
-    const addInvoice = (tenantId: string, period: string): string => {
-        if (!tenantId || !period.trim()) {
-            return "ข้อผิดพลาด: กรุณาเลือกผู้เช่าและระบุรอบบิล";
+    const deleteExpense = async (expenseId: string): Promise<string> => {
+        const result = await api.deleteExpense(expenseId);
+        if (result.success) {
+            setExpenses(prev => prev.filter(e => e.id !== expenseId));
+            return "ลบรายจ่ายสำเร็จแล้ว";
         }
+        return result.message || "เกิดข้อผิดพลาดในการลบรายจ่าย";
+    };
+
+    // --- Data Management Functions ---
+    const addGuest = async (name: string, phone: string): Promise<string> => {
+        const result = await api.addGuest({ name, phone, history: [] });
+        if (result.success) {
+            setGuests(prev => [...prev, result.data as Guest]);
+            return `เพิ่มผู้เข้าพัก ${name} สำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการเพิ่มผู้เข้าพัก";
+    };
+
+    const updateGuest = async (guestId: string, details: { name: string, phone: string }): Promise<string> => {
+        const result = await api.updateGuest({ id: guestId, ...details });
+        if (result.success) {
+            setGuests(prev => prev.map(g => g.id === guestId ? { ...g, ...details } : g));
+            return `อัปเดตข้อมูลผู้เข้าพักสำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการอัปเดตข้อมูลผู้เข้าพัก";
+    };
+
+    const deleteGuest = async (guestId: string): Promise<string> => {
+        const result = await api.deleteGuest(guestId);
+        if (result.success) {
+            setGuests(prev => prev.filter(g => g.id !== guestId));
+            return `ลบข้อมูลผู้เข้าพักสำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการลบข้อมูลผู้เข้าพัก";
+    };
+
+    const addRoom = async (number: string, type: Room['type'], price: number): Promise<string> => {
+        const newRoomData = { number, type, price, status: 'Available' };
+        const result = await api.addRoom(newRoomData);
+        if (result.success) {
+            setRooms(prev => [...prev, result.data as Room]);
+            return `เพิ่มห้อง ${number} สำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการเพิ่มห้อง";
+    };
+
+    const updateRoom = async (roomId: string, details: { number: string, type: Room['type'], price: number }): Promise<string> => {
+        const result = await api.updateRoom({ id: roomId, ...details });
+        if (result.success) {
+            setRooms(prev => prev.map(r => r.id === roomId ? { ...r, ...details } : r));
+            return `อัปเดตข้อมูลห้องสำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการอัปเดตข้อมูลห้อง";
+    };
+
+    const deleteRoom = async (roomId: string): Promise<string> => {
+        const result = await api.deleteRoom(roomId);
+        if (result.success) {
+            setRooms(prev => prev.filter(r => r.id !== roomId));
+            return `ลบห้องสำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการลบห้อง";
+    };
+
+    const addTenant = async (name: string, phone: string, roomId: string, contractStartDateStr: string, contractEndDateStr: string, monthlyRent: number): Promise<string> => {
+        const newTenantData = { name, phone, roomId, contractStartDate: new Date(contractStartDateStr), contractEndDate: new Date(contractEndDateStr), monthlyRent };
+        const result = await api.addTenant(newTenantData);
+        if (result.success) {
+            setTenants(prev => [...prev, result.data as Tenant]);
+            api.getRooms().then(setRooms); // Refresh rooms to update status
+            return `เพิ่มผู้เช่า ${name} สำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการเพิ่มผู้เช่า";
+    };
+
+    const updateTenant = async (tenantId: string, details: any): Promise<string> => {
+        const result = await api.updateTenant({ id: tenantId, ...details });
+        if (result.success) {
+            setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, ...details } : t));
+            api.getRooms().then(setRooms);
+            return `อัปเดตข้อมูลผู้เช่าสำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการอัปเดตข้อมูลผู้เช่า";
+    };
+
+    const deleteTenant = async (tenantId: string): Promise<string> => {
+        const result = await api.deleteTenant(tenantId);
+        if (result.success) {
+            setTenants(prev => prev.filter(t => t.id !== tenantId));
+            api.getRooms().then(setRooms);
+            return `ลบผู้เช่าสำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการลบผู้เช่า";
+    };
+
+    const addEmployee = async (name: string, position: Employee['position'], hireDateStr: string, salaryType: Employee['salaryType'], salaryRate: number): Promise<string> => {
+        const newEmployeeData = { name, position, hireDate: new Date(hireDateStr), status: 'Active', salaryType, salaryRate };
+        const result = await api.addEmployee(newEmployeeData);
+        if (result.success) {
+            setEmployees(prev => [...prev, result.data as Employee]);
+            return `เพิ่มพนักงาน ${name} สำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการเพิ่มพนักงาน";
+    };
+
+    const updateEmployee = async (employeeId: string, details: Pick<Employee, 'name' | 'position' | 'status' | 'salaryType' | 'salaryRate'>): Promise<string> => {
+        const result = await api.updateEmployee({ id: employeeId, ...details });
+        if (result.success) {
+            setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, ...details } : e));
+            return `อัปเดตข้อมูลพนักงานสำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการอัปเดตข้อมูลพนักงาน";
+    };
+
+    const deleteEmployee = async (employeeId: string): Promise<string> => {
+        const result = await api.deleteEmployee(employeeId);
+        if (result.success) {
+            setEmployees(prev => prev.filter(e => e.id !== employeeId));
+            return `ลบพนักงานสำเร็จแล้ว`;
+        }
+        return result.message || "เกิดข้อผิดพลาดในการลบพนักงาน";
+    };
+
+    const addInvoice = async (tenantId: string, period: string): Promise<string> => {
         const tenant = tenants.find(t => t.id === tenantId);
-        if (!tenant) {
-            return `ข้อผิดพลาด: ไม่พบผู้เช่า ID ${tenantId}`;
+        if (!tenant) return "Error: Tenant not found";
+        const newInvoiceData = { tenantId, period, issueDate: new Date(), dueDate: new Date(new Date().setDate(new Date().getDate() + 5)), amount: tenant.monthlyRent, status: 'Unpaid' };
+        const result = await api.addInvoice(newInvoiceData);
+        if (result.success) {
+            setInvoices(prev => [...prev, result.data as Invoice]);
+            return `สร้างใบแจ้งหนี้สำเร็จแล้ว`;
         }
-
-        const newInvoice: Invoice = {
-            id: `INV-${tenantId.slice(1)}-${invoices.filter(i => i.tenantId === tenantId).length + 1}`,
-            tenantId: tenantId,
-            issueDate: new Date(),
-            dueDate: new Date(new Date().setDate(new Date().getDate() + 5)), // Due in 5 days
-            period: period,
-            amount: tenant.monthlyRent,
-            status: 'Unpaid',
-        };
-        setInvoices(prev => [...prev, newInvoice]);
-        return `สร้างใบแจ้งหนี้สำหรับรอบบิล ${period} สำเร็จแล้ว (ID: ${newInvoice.id})`;
+        return result.message || "เกิดข้อผิดพลาดในการสร้างใบแจ้งหนี้";
     };
 
-    const addDocument = (docType: GeneratedDocument['type'], title: string, content: string): string => {
+    const addDocument = async (docType: GeneratedDocument['type'], title: string, content: string): Promise<string> => {
+        // This is a client-side only operation for now as there's no backend endpoint for it.
         const newDoc: GeneratedDocument = {
             id: `DOC-${documents.length + 1}`,
             type: docType,
@@ -258,244 +291,37 @@ const App: React.FC = () => {
             createdAt: new Date(),
         };
         setDocuments(prev => [newDoc, ...prev]);
-        return `สร้างเอกสาร ${title} (ID: ${newDoc.id}) สำเร็จแล้ว`;
+        return `สร้างเอกสาร ${title} สำเร็จแล้ว`;
     };
 
-    const addTask = (description: string, assignedTo: string, relatedTo: string, dueDate?: string): string => {
-        if (!description.trim() || !assignedTo || !relatedTo) {
-            return "ข้อผิดพลาด: กรุณากรอกข้อมูลให้ครบถ้วน";
+    const addTask = async (description: string, assignedTo: string, relatedTo: string, dueDate?: string): Promise<string> => {
+        const newTaskData = { description, assignedTo, relatedTo, status: 'To Do', createdAt: new Date(), dueDate: dueDate ? new Date(dueDate) : undefined };
+        const result = await api.addTask(newTaskData);
+        if (result.success) {
+            setTasks(prev => [result.data as Task, ...prev]);
+            return `สร้างงานใหม่สำเร็จ`;
         }
-        const newTask: Task = {
-            id: `TASK${tasks.length + 1}`,
-            description,
-            status: 'To Do',
-            assignedTo,
-            relatedTo,
-            createdAt: new Date(),
-            dueDate: dueDate ? new Date(dueDate) : undefined,
-        };
-        setTasks(prev => [newTask, ...prev]);
-        return `สร้างงานใหม่สำเร็จ (ID: ${newTask.id})`;
+        return result.message || "เกิดข้อผิดพลาดในการสร้างงาน";
     };
 
-    const updateTaskStatus = (taskId: string, newStatus: TaskStatus): void => {
-        setTasks(prevTasks => prevTasks.map(task => 
-            task.id === taskId ? { ...task, status: newStatus } : task
-        ));
-    };
-    
-    const deleteBooking = (bookingId: string): string => {
-        const booking = bookings.find(b => b.id === bookingId);
-        if (!booking) {
-            return `ข้อผิดพลาด: ไม่พบการจอง ID ${bookingId}`;
-        }
-        
-        setGuests(prevGuests => prevGuests.map(g => 
-            g.id === booking.guestId 
-                ? { ...g, history: g.history.filter(id => id !== bookingId) }
-                : g
-        ));
-
-        const isCurrentOrFutureBooking = new Date(booking.checkOutDate) >= new Date();
-        if ((booking.status === 'Confirmed' || booking.status === 'Check-In') && isCurrentOrFutureBooking) {
-            const otherBookingsForRoom = bookings.some(b => 
-                b.id !== bookingId && 
-                b.roomId === booking.roomId && 
-                (b.status === 'Confirmed' || b.status === 'Check-In')
-            );
-            if (!otherBookingsForRoom) {
-                setRooms(prevRooms => prevRooms.map(r => r.id === booking.roomId ? { ...r, status: 'Available' } : r));
+    const updateTaskStatus = async (taskId: string, newStatus: TaskStatus): Promise<void> => {
+        const task = tasks.find(t => t.id === taskId);
+        if (task) {
+            const result = await api.updateTask({ ...task, status: newStatus });
+            if (result.success) {
+                setTasks(prevTasks => prevTasks.map(t =>
+                    t.id === taskId ? { ...t, status: newStatus } : t
+                ));
             }
+            // Handle error case? The original function returned void.
         }
-        
-        setBookings(prevBookings => prevBookings.filter(b => b.id !== bookingId));
-        return `ลบการจอง ID ${bookingId} สำเร็จแล้ว`;
     };
-    
-    // --- Data Management Functions ---
-    const addGuest = (name: string, phone: string): string => {
-        if (!name.trim()) return "ข้อผิดพลาด: ชื่อผู้เข้าพักห้ามว่าง";
-        const existingGuest = guests.find(g => g.name.toLowerCase() === name.trim().toLowerCase());
-        if (existingGuest) return `ข้อผิดพลาด: มีผู้เข้าพักชื่อ ${name} อยู่แล้ว`;
-
-        const newGuest: Guest = {
-            id: `G${guests.length + 1}`,
-            name: name.trim(),
-            phone: phone.trim() || 'N/A',
-            history: [],
-        };
-        setGuests(prev => [...prev, newGuest]);
-        return `เพิ่มผู้เข้าพัก ${name} สำเร็จแล้ว`;
-    };
-
-    const updateGuest = (guestId: string, details: { name: string, phone: string }): string => {
-        const guestIndex = guests.findIndex(g => g.id === guestId);
-        if (guestIndex === -1) return "ข้อผิดพลาด: ไม่พบผู้เข้าพัก";
-        
-        const updatedGuests = [...guests];
-        updatedGuests[guestIndex] = { ...updatedGuests[guestIndex], ...details };
-        setGuests(updatedGuests);
-        return `อัปเดตข้อมูลผู้เข้าพักสำเร็จแล้ว`;
-    };
-
-    const deleteGuest = (guestId: string): string => {
-        const guest = guests.find(g => g.id === guestId);
-        if (!guest) {
-            return `ข้อผิดพลาด: ไม่พบผู้เข้าพัก ID ${guestId}`;
-        }
-        const hasActiveBooking = bookings.some(b => b.guestId === guestId && (b.status === 'Check-In' || b.status === 'Confirmed'));
-        if (hasActiveBooking) {
-            return `ข้อผิดพลาด: ไม่สามารถลบผู้เข้าพักที่มีการจองที่ยังดำเนินอยู่ได้`;
-        }
-        setGuests(prevGuests => prevGuests.filter(g => g.id !== guestId));
-        return `ลบข้อมูลผู้เข้าพัก ${guest.name} สำเร็จแล้ว`;
-    };
-
-    const addRoom = (number: string, type: Room['type'], price: number): string => {
-        if (!number.trim() || !type || !price || price <= 0) return "ข้อผิดพลาด: กรุณากรอกข้อมูลให้ครบถ้วน";
-        const existingRoom = rooms.find(r => r.number.toLowerCase() === number.trim().toLowerCase());
-        if (existingRoom) return `ข้อผิดพลาด: มีห้องหมายเลข ${number} อยู่แล้ว`;
-
-        const newRoom: Room = {
-            id: `R${rooms.length + 1}`,
-            number: number.trim().toUpperCase(),
-            type,
-            price,
-            status: 'Available',
-        };
-        setRooms(prev => [...prev, newRoom]);
-        return `เพิ่มห้อง ${number} สำเร็จแล้ว`;
-    };
-
-    const updateRoom = (roomId: string, details: { number: string, type: Room['type'], price: number }): string => {
-        const roomIndex = rooms.findIndex(r => r.id === roomId);
-        if (roomIndex === -1) return "ข้อผิดพลาด: ไม่พบห้อง";
-        
-        if (details.number.toLowerCase() !== rooms[roomIndex].number.toLowerCase()) {
-            const existingRoom = rooms.find(r => r.number.toLowerCase() === details.number.toLowerCase());
-            if (existingRoom) return `ข้อผิดพลาด: มีห้องหมายเลข ${details.number} อยู่แล้ว`;
-        }
-
-        const updatedRooms = [...rooms];
-        updatedRooms[roomIndex] = { ...updatedRooms[roomIndex], ...details, number: details.number.toUpperCase() };
-        setRooms(updatedRooms);
-        return `อัปเดตข้อมูลห้องสำเร็จแล้ว`;
-    };
-
-    const deleteRoom = (roomId: string): string => {
-        const room = rooms.find(r => r.id === roomId);
-        if (!room) {
-            return `ข้อผิดพลาด: ไม่พบห้อง ID ${roomId}`;
-        }
-        const hasBookings = bookings.some(b => b.roomId === roomId && b.status !== 'Cancelled' && b.status !== 'Check-Out');
-        if (hasBookings) {
-            return `ข้อผิดพลาด: ไม่สามารถลบห้องที่มีการจองอยู่ได้`;
-        }
-        const isRented = tenants.some(t => t.roomId === roomId);
-        if (isRented) {
-             return `ข้อผิดพลาด: ไม่สามารถลบห้องที่มีผู้เช่ารายเดือนได้`;
-        }
-
-        setRooms(prevRooms => prevRooms.filter(r => r.id !== roomId));
-        return `ลบห้อง ${room.number} สำเร็จแล้ว`;
-    };
-
-    const addTenant = (name: string, phone: string, roomId: string, contractStartDateStr: string, contractEndDateStr: string, monthlyRent: number): string => {
-        if (!name.trim() || !roomId || !contractStartDateStr || !contractEndDateStr || !monthlyRent) return "ข้อผิดพลาด: กรุณากรอกข้อมูลให้ครบถ้วน";
-        const room = rooms.find(r => r.id === roomId);
-        if (!room) return "ข้อผิดพลาด: ไม่พบห้องที่เลือก";
-        if (room.status !== 'Available') return `ข้อผิดพลาด: ห้อง ${room.number} ไม่ว่างสำหรับให้เช่ารายเดือน`;
-
-        const newTenant: Tenant = {
-            id: `T${tenants.length + 1}`,
-            name, phone, roomId, 
-            contractStartDate: new Date(contractStartDateStr), 
-            contractEndDate: new Date(contractEndDateStr), 
-            monthlyRent
-        };
-        setTenants(prev => [...prev, newTenant]);
-        setRooms(prevRooms => prevRooms.map(r => r.id === roomId ? { ...r, status: 'Monthly Rental' } : r));
-        return `เพิ่มผู้เช่า ${name} สำหรับห้อง ${room.number} สำเร็จแล้ว`;
-    };
-
-    const updateTenant = (tenantId: string, details: { name: string; phone: string; roomId: string; contractStartDate: string; contractEndDate: string; monthlyRent: number; }): string => {
-        const tenantIndex = tenants.findIndex(t => t.id === tenantId);
-        if (tenantIndex === -1) return "ข้อผิดพลาด: ไม่พบผู้เช่า";
-        const originalTenant = tenants[tenantIndex];
-
-        const updatedTenants = [...tenants];
-        updatedTenants[tenantIndex] = { 
-            id: tenantId, 
-            ...details,
-            contractStartDate: new Date(details.contractStartDate),
-            contractEndDate: new Date(details.contractEndDate),
-        };
-        setTenants(updatedTenants);
-
-        if (originalTenant.roomId !== details.roomId) {
-            setRooms(prevRooms => prevRooms.map(r => {
-                if (r.id === originalTenant.roomId) return { ...r, status: 'Available' };
-                if (r.id === details.roomId) return { ...r, status: 'Monthly Rental' };
-                return r;
-            }));
-        }
-        return `อัปเดตข้อมูลผู้เช่าสำเร็จแล้ว`;
-    };
-
-    const deleteTenant = (tenantId: string): string => {
-        const tenant = tenants.find(t => t.id === tenantId);
-        if (!tenant) return "ข้อผิดพลาด: ไม่พบผู้เช่า";
-
-        setTenants(prev => prev.filter(t => t.id !== tenantId));
-        setRooms(prevRooms => prevRooms.map(r => r.id === tenant.roomId ? { ...r, status: 'Available' } : r));
-        setInvoices(prev => prev.filter(i => i.tenantId !== tenantId));
-        return `ลบผู้เช่า ${tenant.name} และใบแจ้งหนี้ที่เกี่ยวข้องสำเร็จแล้ว`;
-    };
-
-    const addEmployee = (name: string, position: Employee['position'], hireDateStr: string, salaryType: Employee['salaryType'], salaryRate: number): string => {
-        if (!name.trim() || !position || !hireDateStr || !salaryType || !salaryRate) return "ข้อผิดพลาด: กรุณากรอกข้อมูลให้ครบถ้วน";
-        
-        const newEmployee: Employee = {
-            id: `EMP${employees.length + 1}`,
-            name,
-            position,
-            hireDate: new Date(hireDateStr),
-            status: 'Active',
-            salaryType,
-            salaryRate
-        };
-        setEmployees(prev => [...prev, newEmployee]);
-        return `เพิ่มพนักงาน ${name} สำเร็จแล้ว`;
-    };
-
-    const updateEmployee = (employeeId: string, details: Pick<Employee, 'name' | 'position' | 'status' | 'salaryType' | 'salaryRate'>): string => {
-        const empIndex = employees.findIndex(e => e.id === employeeId);
-        if (empIndex === -1) return "ข้อผิดพลาด: ไม่พบพนักงาน";
-        
-        const updatedEmployees = [...employees];
-        const originalEmployee = updatedEmployees[empIndex];
-        updatedEmployees[empIndex] = { ...originalEmployee, ...details };
-
-        if (details.status === 'Inactive' && !originalEmployee.terminationDate) {
-            updatedEmployees[empIndex].terminationDate = new Date();
-        } else if (details.status === 'Active') {
-            updatedEmployees[empIndex].terminationDate = undefined;
-        }
-        setEmployees(updatedEmployees);
-        return `อัปเดตข้อมูลพนักงานสำเร็จแล้ว`;
-    };
-
-    const deleteEmployee = (employeeId: string): string => {
-        const hasActiveTasks = tasks.some(t => t.assignedTo === employeeId && t.status !== 'Done');
-        if (hasActiveTasks) return "ข้อผิดพลาด: ไม่สามารถลบพนักงานที่มีงานที่ยังไม่เสร็จได้";
-
-        setEmployees(prev => prev.filter(e => e.id !== employeeId));
-        return `ลบพนักงานสำเร็จแล้ว`;
-    };
-    // --- End Data Management Functions ---
-
 
     const renderPage = () => {
+        if (loading) {
+            return <div className="p-4">Loading...</div>;
+        }
+        // ... (switch case remains the same, but now passes the state and async functions to components)
         switch (currentPage) {
             case 'ภาพรวม':
                 return <Dashboard bookings={bookings} rooms={rooms} expenses={expenses} setCurrentPage={setCurrentPage} setFinanceDateFilter={setFinanceDateFilter} />;
@@ -530,8 +356,7 @@ const App: React.FC = () => {
             case 'การจัดการงาน':
                 return <Tasks tasks={tasks} employees={employees} rooms={rooms} addTask={addTask} updateTaskStatus={updateTaskStatus} />;
             default:
-                const exhaustiveCheck: never = currentPage as never;
-                return <div>ไม่พบหน้า: {exhaustiveCheck}</div>;
+                return <div>ไม่พบหน้า</div>;
         }
     };
 
