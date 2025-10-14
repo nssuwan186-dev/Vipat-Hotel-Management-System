@@ -1,5 +1,5 @@
 import { GoogleGenAI, FunctionDeclaration, Type, GenerateContentParameters, Content, GenerateContentResponse, FinishReason } from "@google/genai";
-import type { Room, Booking, Guest } from '../types';
+import type { Room, Booking, Guest, Expense, Tenant, Employee, Invoice } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
 const model = "gemini-2.5-flash";
@@ -120,7 +120,7 @@ const generateTaxInvoiceFunctionDeclaration: FunctionDeclaration = {
 };
 
 
-const generateContextPrompt = (context: { rooms: Room[], bookings: Booking[], guests: Guest[] }): string => {
+const generateContextPrompt = (context: { rooms: Room[], bookings: Booking[], guests: Guest[], expenses: Expense[], tenants: Tenant[], employees: Employee[], invoices: Invoice[] }): string => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -148,8 +148,28 @@ const generateContextPrompt = (context: { rooms: Room[], bookings: Booking[], gu
         const guest = context.guests.find(g => g.id === b.guestId);
         return `${guest?.name || 'N/A'} (ห้อง ${room?.number || 'N/A'})`;
     });
+    
+    const activeTenants = context.tenants.length;
+    const activeEmployees = context.employees.filter(e => e.status === 'Active').length;
+    const unpaidInvoices = context.invoices.filter(i => i.status === 'Unpaid').length;
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    const currentMonthExpenses = context.expenses
+        .filter(e => new Date(e.date).getMonth() === currentMonth && new Date(e.date).getFullYear() === currentYear)
+        .reduce((sum, e) => sum + e.amount, 0);
+
 
     const roomSummary = context.rooms.map(r => `Room ${r.number} (${r.type}, Price: ${r.price}, Status: ${r.status})`).join('\n');
+    const tenantSummary = context.tenants.map(t => {
+        const room = context.rooms.find(r => r.id === t.roomId);
+        return `Tenant ${t.name} (ID: ${t.id}, Room: ${room?.number || 'N/A'}, Rent: ${t.monthlyRent})`;
+    }).join('\n');
+    const employeeSummary = context.employees.map(e => `Employee ${e.name} (ID: ${e.id}, Position: ${e.position}, Status: ${e.status})`).join('\n');
+    const invoiceSummary = context.invoices.slice(-10).map(i => { // Limit to recent 10 to avoid huge prompts
+        const tenant = context.tenants.find(t => t.id === i.tenantId);
+        return `Invoice ${i.id} (Tenant: ${tenant?.name || 'N/A'}, Amount: ${i.amount}, Status: ${i.status}, Period: ${i.period})`;
+    }).join('\n');
+
 
     return `
 You are an AI assistant for a hotel management system called VIPAT HMS.
@@ -158,23 +178,30 @@ You can check room availability, create bookings, and generate documents.
 Always be polite and helpful. Use Thai language for responses unless the user uses English.
 Today's date is ${today.toISOString().split('T')[0]}.
 
---- REAL-TIME HOTEL STATUS ---
-Room Summary:
-- Available: ${roomStatusCounts['Available'] || 0}
-- Occupied: ${roomStatusCounts['Occupied'] || 0}
-- Cleaning: ${roomStatusCounts['Cleaning'] || 0}
-- Monthly Rental: ${roomStatusCounts['Monthly Rental'] || 0}
-
-Today's Check-ins (${todaysCheckIns.length}): ${todaysCheckIns.length > 0 ? todaysCheckIns.join(', ') : 'None'}
-Today's Check-outs (${todaysCheckOuts.length}): ${todaysCheckOuts.length > 0 ? todaysCheckOuts.join(', ') : 'None'}
+--- REAL-TIME HOTEL STATUS (SUMMARY) ---
+Room Status: Available: ${roomStatusCounts['Available'] || 0}, Occupied: ${roomStatusCounts['Occupied'] || 0}, Cleaning: ${roomStatusCounts['Cleaning'] || 0}, Monthly Rental: ${roomStatusCounts['Monthly Rental'] || 0}
+Today's Activity: ${todaysCheckIns.length} Check-ins, ${todaysCheckOuts.length} Check-outs
+Financials: ${unpaidInvoices} Unpaid Invoices, ${currentMonthExpenses.toLocaleString('th-TH')} THB expenses this month.
+Personnel & Tenants: ${activeEmployees} Active Employees, ${activeTenants} Monthly Tenants.
 ---
 
-Detailed Room List for reference:
+--- DETAILED DATA FOR REFERENCE ---
+Detailed Room List:
 ${roomSummary}
-`.trim();
+
+Detailed Tenant List:
+${tenantSummary}
+
+Detailed Employee List:
+${employeeSummary}
+
+Recent Invoice List (up to 10):
+${invoiceSummary}
+---
+`.trim().replace(/^\s*\n/gm, "");
 };
 
-export const runAiChat = async (history: Content[], context: { rooms: Room[], bookings: Booking[], guests: Guest[] }): Promise<GenerateContentResponse> => {
+export const runAiChat = async (history: Content[], context: { rooms: Room[], bookings: Booking[], guests: Guest[], expenses: Expense[], tenants: Tenant[], employees: Employee[], invoices: Invoice[] }): Promise<GenerateContentResponse> => {
     const systemInstruction = generateContextPrompt(context);
 
     const request: GenerateContentParameters = {
@@ -197,21 +224,34 @@ export const runAiChat = async (history: Content[], context: { rooms: Room[], bo
     try {
         const result = await ai.models.generateContent(request);
         return result;
-    } catch (e) {
+    } catch (e: any) {
         console.error("Error calling Gemini API:", e);
-        const errorText = "ขออภัยค่ะ เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI Assistant กรุณาลองใหม่อีกครั้ง";
+        let userMessage = "ขออภัยค่ะ เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI Assistant กรุณาลองใหม่อีกครั้ง";
+
+        if (e.message) {
+            if (e.message.toLowerCase().includes('network') || e.message.toLowerCase().includes('fetch')) {
+                userMessage = "เกิดข้อผิดพลาดด้านเครือข่าย กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองอีกครั้ง";
+            } else if (e.toString().includes('API key')) {
+                // This is a developer error, don't show technical details to the user.
+                console.error("Gemini API key is invalid or missing.");
+                userMessage = "เกิดข้อผิดพลาดในการกำหนดค่าระบบ ไม่สามารถเชื่อมต่อ AI ได้";
+            } else if (e.message.length < 100) { // Avoid showing huge technical error messages
+                 userMessage = `เกิดข้อผิดพลาดที่ไม่คาดคิด: ${e.message}. กรุณาลองอีกครั้งในภายหลัง`;
+            }
+        }
+        
         const mockCandidates = [{
             content: {
                 role: 'model',
-                parts: [{ text: errorText }]
+                parts: [{ text: userMessage }]
             },
-            finishReason: FinishReason.OTHER,
+            finishReason: FinishReason.ERROR, // Use ERROR for semantic correctness
             index: 0,
             safetyRatings: [],
         }];
 
         return {
-            text: errorText,
+            text: userMessage,
             candidates: mockCandidates,
             functionCalls: [],
             executableCode: undefined,
@@ -231,8 +271,11 @@ export const generateDocumentContent = async (prompt: string): Promise<string> =
             }
         });
         return result.text ?? "Error: AI returned an empty response.";
-    } catch (e) {
+    } catch (e: any) {
         console.error("Error generating document content:", e);
-        return "Error: Could not generate document content.";
+        if (e.message && (e.message.toLowerCase().includes('network') || e.message.toLowerCase().includes('fetch'))) {
+            return "Error: Network issue. Please check your connection and try again.";
+        }
+        return "Error: Could not generate document content due to an unexpected issue.";
     }
 };

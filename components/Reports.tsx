@@ -1,9 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { Booking, Expense, Room, Employee, Tenant, GeneratedDocument, Attendance, Guest, MultiSheetExportPayload, SheetExportData } from '../types';
-import { exportToGoogleSheets } from '../services/googleApiService';
+import type { Booking, Expense, Room, Employee, Tenant, GeneratedDocument, Attendance, Guest } from '../types';
 import { DocumentIcon } from './icons/Icons';
-import { generateReceiptHtml, generateTaxInvoiceHtml } from '../services/documentService';
 import RevenueReportChart from './RevenueReportChart';
+import { generateReceiptHtml, generateTaxInvoiceHtml } from '../services/documentService';
 
 interface ReportsProps {
     bookings: Booking[];
@@ -17,26 +16,37 @@ interface ReportsProps {
     addDocument: (docType: GeneratedDocument['type'], title: string, content: string) => string;
 }
 
+// Helper function to parse 'YYYY-MM-DD' strings as local date to avoid timezone issues.
+const parseDateString = (dateStr: string): Date | null => {
+    if (!dateStr) return null;
+    // Appending T00:00:00 ensures the date is parsed in the local timezone, not as UTC midnight.
+    // This prevents off-by-one day errors in timezones west of UTC.
+    return new Date(`${dateStr}T00:00:00`);
+};
+
 const Reports: React.FC<ReportsProps> = ({ bookings, guests, expenses, rooms, employees, tenants, documents, attendance, addDocument }) => {
     const [activeTab, setActiveTab] = useState('สรุปรายได้');
     const [selectedDoc, setSelectedDoc] = useState<GeneratedDocument | null>(null);
-    const [exportMessage, setExportMessage] = useState<{ type: 'success' | 'error', text: string, url?: string } | null>(null);
-    const [isExporting, setIsExporting] = useState<string | null>(null);
-    const [isExportingAll, setIsExportingAll] = useState(false);
     
-    // State for document generator
-    const [generatorMessage, setGeneratorMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-    const [selectedBookingId, setSelectedBookingId] = useState<string>('');
-    const [amount, setAmount] = useState<string>('');
-
     // State for document filtering
     const [docSearch, setDocSearch] = useState('');
     const [docTypeFilter, setDocTypeFilter] = useState('All');
     const [docDateFilter, setDocDateFilter] = useState({ start: '', end: '' });
 
+    // State for stay history report
+    const [historyGuestName, setHistoryGuestName] = useState('');
+    const [historyDateRange, setHistoryDateRange] = useState({ start: '', end: '' });
+
+    // State for document generator
+    const [generatorMessage, setGeneratorMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [selectedBookingId, setSelectedBookingId] = useState<string>('');
+    const [amount, setAmount] = useState<string>('');
+
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
-    const tabs = ['สรุปรายได้', 'เอกสารที่สร้าง', 'เครื่องมือส่งออก'];
+    const tabs = ['สรุปรายได้', 'คลังเอกสาร', 'ประวัติการเข้าพัก', 'สร้างเอกสาร'];
+
+    const documentTypes: GeneratedDocument['type'][] = ['Invoice', 'Booking Confirmation', 'Employee Contract', 'Guest Welcome Letter', 'Lost and Found Notice', 'Maintenance Request', 'Receipt', 'Tax Invoice'];
 
     useEffect(() => {
         if (selectedBookingId) {
@@ -49,16 +59,13 @@ const Reports: React.FC<ReportsProps> = ({ bookings, guests, expenses, rooms, em
         }
     }, [selectedBookingId, bookings]);
 
-    const documentTypes: GeneratedDocument['type'][] = ['Invoice', 'Booking Confirmation', 'Employee Contract', 'Guest Welcome Letter', 'Lost and Found Notice', 'Maintenance Request', 'Receipt', 'Tax Invoice'];
-
     const filteredDocuments = useMemo(() => {
         return documents
             .filter(doc => {
                 const docDate = new Date(doc.createdAt);
                 docDate.setHours(0,0,0,0);
-                const startDate = docDateFilter.start ? new Date(docDateFilter.start) : null;
-                if(startDate) startDate.setHours(0,0,0,0);
-                const endDate = docDateFilter.end ? new Date(docDateFilter.end) : null;
+                const startDate = parseDateString(docDateFilter.start);
+                const endDate = parseDateString(docDateFilter.end);
                 if(endDate) endDate.setHours(23,59,59,999);
 
                 const matchesSearch = doc.title.toLowerCase().includes(docSearch.toLowerCase());
@@ -70,138 +77,39 @@ const Reports: React.FC<ReportsProps> = ({ bookings, guests, expenses, rooms, em
             .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }, [documents, docSearch, docTypeFilter, docDateFilter]);
     
-    const payrollDataForExport = useMemo(() => {
-        const today = new Date();
-        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        const lastMonthYear = lastMonth.getFullYear();
-        const lastMonthIndex = lastMonth.getMonth();
+    const filteredStayHistory = useMemo(() => {
+        return bookings
+            .map(booking => ({
+                ...booking,
+                guest: guests.find(g => g.id === booking.guestId),
+                room: rooms.find(r => r.id === booking.roomId),
+            }))
+            .filter(enrichedBooking => {
+                if (!enrichedBooking.guest || !enrichedBooking.room) return false;
 
-        return employees
-            .filter(e => e.status === 'Active')
-            .map(emp => {
-                const empAttendance = attendance.filter(a => 
-                    a.employeeId === emp.id &&
-                    new Date(a.date).getFullYear() === lastMonthYear &&
-                    new Date(a.date).getMonth() === lastMonthIndex
-                );
-                const presentDays = empAttendance.filter(a => a.status === 'Present').length;
-                
-                let calculatedPay = 0;
-                let attendanceDetail = '-';
-                if (emp.salaryType === 'Monthly') {
-                    calculatedPay = emp.salaryRate;
-                    attendanceDetail = `รายเดือน (${emp.salaryRate.toLocaleString()})`;
-                } else {
-                    calculatedPay = emp.salaryRate * presentDays;
-                    attendanceDetail = `มาทำงาน ${presentDays} วัน (อัตรา: ${emp.salaryRate.toLocaleString()})`;
-                }
-            
-                return [
-                    emp.name,
-                    emp.position,
-                    emp.salaryType === 'Monthly' ? 'รายเดือน' : 'รายวัน',
-                    attendanceDetail,
-                    calculatedPay
-                ];
-        });
-    }, [employees, attendance]);
+                const guestNameMatch = historyGuestName.trim() === '' ||
+                    enrichedBooking.guest.name.toLowerCase().includes(historyGuestName.trim().toLowerCase());
+                if (!guestNameMatch) return false;
 
+                const startDate = parseDateString(historyDateRange.start);
+                const endDate = parseDateString(historyDateRange.end);
+                if(endDate) endDate.setHours(23,59,59,999);
 
-    const exportConfigs = useMemo(() => [
-        { 
-            label: 'ส่งออกข้อมูลการจอง',
-            type: 'bookings',
-            title: 'Bookings Report',
-            headers: ['ID', 'Guest ID', 'Guest Name', 'Room ID', 'Room Number', 'Check-In', 'Check-Out', 'Status', 'Total Price'],
-            data: bookings.map(b => {
-                const guest = guests.find(g => g.id === b.guestId);
-                const room = rooms.find(r => r.id === b.roomId);
-                return [
-                    b.id,
-                    b.guestId,
-                    guest?.name || 'N/A',
-                    b.roomId,
-                    room?.number || 'N/A',
-                    b.checkInDate.toISOString().split('T')[0],
-                    b.checkOutDate.toISOString().split('T')[0],
-                    b.status,
-                    b.totalPrice
-                ];
+                const checkInDate = new Date(enrichedBooking.checkInDate);
+                const dateMatch = (!startDate || checkInDate >= startDate) && (!endDate || checkInDate <= endDate);
+
+                return dateMatch;
             })
-        },
-        {
-            label: 'ส่งออกข้อมูลรายจ่าย',
-            type: 'expenses',
-            title: 'Expenses Report',
-            headers: ['ID', 'Date', 'Category', 'Description', 'Amount'],
-            data: expenses.map(e => [e.id, e.date.toISOString().split('T')[0], e.category, e.description, e.amount])
-        },
-        {
-            label: 'ส่งออกสถานะห้องพัก',
-            type: 'rooms',
-            title: 'Room Status Report',
-            headers: ['Number', 'Type', 'Price', 'Status'],
-            data: rooms.map(r => [r.number, r.type, r.price, r.status])
-        },
-        {
-            label: 'ส่งออกข้อมูลเงินเดือน',
-            type: 'payroll',
-            title: 'Payroll Report',
-            headers: ['ชื่อพนักงาน', 'ตำแหน่ง', 'ประเภทเงินเดือน', 'การเข้างาน', 'เงินเดือน (บาท)'],
-            data: payrollDataForExport
-        },
-    ], [bookings, guests, rooms, expenses, payrollDataForExport]);
+            .sort((a, b) => new Date(b.checkInDate).getTime() - new Date(a.checkInDate).getTime());
+    }, [bookings, guests, rooms, historyGuestName, historyDateRange]);
 
-
-    const handleExport = async (type: string, data: any[], headers: string[], title: string) => {
-        const timestamp = new Date().toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-        const sheetTitleWithTimestamp = `${title} (${timestamp})`;
-        setIsExporting(title);
-        setExportMessage(null);
-        
-        const exportPayload: MultiSheetExportPayload = {
-            sheets: [{
-                sheetTitle: sheetTitleWithTimestamp,
-                headers: headers,
-                rows: data,
-            }]
-        };
-
-        const result = await exportToGoogleSheets(exportPayload);
-        
-        if (result.success && result.sheetUrl) {
-            setExportMessage({ type: 'success', text: result.message, url: result.sheetUrl });
-        } else {
-            setExportMessage({ type: 'error', text: `เกิดข้อผิดพลาด: ${result.message}` });
+    const handlePrint = () => {
+        if (iframeRef.current && iframeRef.current.contentWindow) {
+            iframeRef.current.contentWindow.focus();
+            iframeRef.current.contentWindow.print();
         }
-        setIsExporting(null);
     };
-
-    const handleExportAll = async () => {
-        setIsExportingAll(true);
-        setExportMessage(null);
-
-        const sheetsData: SheetExportData[] = exportConfigs.map(config => {
-            const timestamp = new Date().toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-            return {
-                sheetTitle: `${config.title} (${timestamp})`,
-                headers: config.headers,
-                rows: config.data,
-            };
-        });
-        
-        const exportPayload: MultiSheetExportPayload = { sheets: sheetsData };
-        const result = await exportToGoogleSheets(exportPayload);
-
-        if (result.success && result.sheetUrl) {
-            setExportMessage({ type: 'success', text: 'ส่งออกรายงานทั้งหมดสำเร็จแล้ว', url: result.sheetUrl });
-        } else {
-            setExportMessage({ type: 'error', text: `เกิดข้อผิดพลาด: ${result.message}` });
-        }
-        
-        setIsExportingAll(false);
-    };
-
+    
     const handleGenerateDoc = async (docType: 'Receipt' | 'Tax Invoice') => {
         if (!selectedBookingId || !amount) {
             setGeneratorMessage({ type: 'error', text: 'กรุณาเลือกการจองและระบุจำนวนเงิน' });
@@ -241,20 +149,13 @@ const Reports: React.FC<ReportsProps> = ({ bookings, guests, expenses, rooms, em
         }
     };
 
-    const handlePrint = () => {
-        if (iframeRef.current && iframeRef.current.contentWindow) {
-            iframeRef.current.contentWindow.focus();
-            iframeRef.current.contentWindow.print();
-        }
-    };
-
 
     const renderTabContent = () => {
         switch (activeTab) {
             case 'สรุปรายได้':
                 return <RevenueReportChart bookings={bookings} />;
 
-            case 'เอกสารที่สร้าง':
+            case 'คลังเอกสาร':
                 return (
                     <div>
                         <div className="p-4 mb-6 bg-gray-50 rounded-xl border">
@@ -317,102 +218,128 @@ const Reports: React.FC<ReportsProps> = ({ bookings, guests, expenses, rooms, em
                         )}
                     </div>
                 );
-            case 'เครื่องมือส่งออก':
+            case 'ประวัติการเข้าพัก':
                 return (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        <div className="p-4 border rounded-lg bg-white">
-                            <h3 className="text-lg font-semibold mb-4 text-gray-700">สร้างเอกสารการเงิน</h3>
-                            {generatorMessage && (
-                                <div className={`p-3 mb-4 rounded-lg text-sm ${generatorMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                    {generatorMessage.text}
-                                </div>
-                            )}
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">เลือกการจอง</label>
-                                    <select
-                                        value={selectedBookingId}
-                                        onChange={(e) => setSelectedBookingId(e.target.value)}
-                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                    >
-                                        <option value="">-- กรุณาเลือก --</option>
-                                        {bookings.sort((a, b) => b.checkInDate.getTime() - a.checkInDate.getTime()).map(b => {
-                                            const guest = guests.find(g => g.id === b.guestId);
-                                            const room = rooms.find(r => r.id === b.roomId);
-                                            return <option key={b.id} value={b.id}>
-                                                {`ID: ${b.id} - ${guest?.name} (ห้อง ${room?.number})`}
-                                            </option>
-                                        })}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">จำนวนเงิน (บาท)</label>
+                    <div>
+                        <div className="p-4 mb-6 bg-gray-50 rounded-xl border">
+                            <h4 className="font-semibold text-gray-700 mb-3">ค้นหาประวัติการเข้าพัก</h4>
+                            <div className="flex flex-wrap items-center gap-4">
+                                <div className="flex-grow min-w-[200px] sm:min-w-[250px]">
+                                    <label htmlFor="guest-name-filter" className="sr-only">ค้นหาตามชื่อแขก</label>
                                     <input
-                                        type="number"
-                                        value={amount}
-                                        onChange={(e) => setAmount(e.target.value)}
-                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        id="guest-name-filter"
+                                        type="text"
+                                        placeholder="ค้นหาตามชื่อแขก..."
+                                        value={historyGuestName}
+                                        onChange={e => setHistoryGuestName(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <label htmlFor="history-date-start" className="text-sm text-gray-600 shrink-0">วันที่เช็คอิน:</label>
+                                    <input
+                                        id="history-date-start"
+                                        type="date"
+                                        value={historyDateRange.start}
+                                        onChange={e => setHistoryDateRange({ ...historyDateRange, start: e.target.value })}
+                                        className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <span className="text-gray-500">-</span>
+                                    <input
+                                        id="history-date-end"
+                                        type="date"
+                                        value={historyDateRange.end}
+                                        onChange={e => setHistoryDateRange({ ...historyDateRange, end: e.target.value })}
+                                        className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     />
                                 </div>
                             </div>
-                            <div className="flex space-x-3 mt-4">
-                                <button
-                                    onClick={() => handleGenerateDoc('Receipt')}
-                                    disabled={!selectedBookingId}
-                                    className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-gray-400"
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full whitespace-nowrap">
+                                <thead className="bg-gray-100/70">
+                                    <tr>
+                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">ชื่อผู้เข้าพัก</th>
+                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">ห้อง</th>
+                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">เช็คอิน</th>
+                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">เช็คเอาท์</th>
+                                        <th className="py-3 px-4 text-right text-sm font-semibold text-gray-600 uppercase tracking-wider">ราคารวม</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredStayHistory.length > 0 ? (
+                                        filteredStayHistory.map(b => (
+                                            <tr key={b.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                                <td className="py-3 px-4 text-sm text-gray-800 font-medium">{b.guest?.name}</td>
+                                                <td className="py-3 px-4 text-sm text-gray-600">{b.room?.number}</td>
+                                                <td className="py-3 px-4 text-sm text-gray-600">{new Date(b.checkInDate).toLocaleDateString('th-TH')}</td>
+                                                <td className="py-3 px-4 text-sm text-gray-600">{new Date(b.checkOutDate).toLocaleDateString('th-TH')}</td>
+                                                <td className="py-3 px-4 text-sm text-gray-800 font-medium text-right">{b.totalPrice.toLocaleString('th-TH', { style: 'currency', currency: 'THB' })}</td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan={5} className="text-center py-10 text-gray-500">ไม่พบข้อมูลประวัติการเข้าพักที่ตรงกับเงื่อนไข</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            case 'สร้างเอกสาร':
+                return (
+                    <div className="p-6 border rounded-2xl bg-white shadow-sm max-w-2xl mx-auto">
+                        <h3 className="text-xl font-semibold text-gray-800 mb-4">สร้างใบเสร็จ / ใบกำกับภาษี</h3>
+                        <p className="text-sm text-gray-600 mb-6">เลือกการจองรายวันเพื่อสร้างเอกสารทางการเงิน</p>
+                        {generatorMessage && (
+                            <div className={`p-3 mb-4 rounded-lg text-sm ${generatorMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {generatorMessage.text}
+                            </div>
+                        )}
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">เลือกการจอง</label>
+                                <select
+                                    value={selectedBookingId}
+                                    onChange={(e) => setSelectedBookingId(e.target.value)}
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                                 >
-                                    สร้างใบเสร็จ
-                                </button>
-                                <button
-                                    onClick={() => handleGenerateDoc('Tax Invoice')}
-                                    disabled={!selectedBookingId}
-                                    className="px-4 py-2 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 disabled:bg-gray-400"
-                                >
-                                    สร้างใบกำกับภาษี
-                                </button>
+                                    <option value="">-- กรุณาเลือก --</option>
+                                    {bookings.sort((a, b) => b.checkInDate.getTime() - a.checkInDate.getTime()).map(b => {
+                                        const guest = guests.find(g => g.id === b.guestId);
+                                        const room = rooms.find(r => r.id === b.roomId);
+                                        return <option key={b.id} value={b.id}>
+                                            {`ID: ${b.id} - ${guest?.name} (ห้อง ${room?.number})`}
+                                        </option>
+                                    })}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">จำนวนเงิน (บาท)</label>
+                                <input
+                                    type="number"
+                                    value={amount}
+                                    onChange={(e) => setAmount(e.target.value)}
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                />
                             </div>
                         </div>
-
-                        <div className="p-4 border rounded-lg bg-white">
-                            <h3 className="text-lg font-semibold mb-4 text-gray-700">ส่งออกข้อมูลไปยัง Google Sheets</h3>
-                            {exportMessage && (
-                                <div className={`p-3 mb-4 rounded-lg text-sm ${exportMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                    <p className="font-semibold">{exportMessage.type === 'success' ? 'สำเร็จ!' : 'ข้อผิดพลาด'}</p>
-                                    <p>
-                                        {exportMessage.text}
-                                        {exportMessage.url && (
-                                            <>
-                                                {' '}
-                                                <a href={exportMessage.url} target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-green-900">
-                                                    สามารถดูได้ที่นี่
-                                                </a>
-                                            </>
-                                        )}
-                                    </p>
-                                </div>
-                            )}
+                        <div className="flex space-x-3 mt-6">
                             <button
-                                onClick={handleExportAll}
-                                disabled={isExportingAll || !!isExporting}
-                                className="w-full mb-4 px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-wait flex items-center justify-center transition-colors"
+                                onClick={() => handleGenerateDoc('Receipt')}
+                                disabled={!selectedBookingId}
+                                className="flex-1 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-gray-400"
                             >
-                                {isExportingAll ? 'กำลังส่งออกทั้งหมด...' : 'ส่งออกรายงานทั้งหมด'}
+                                สร้างใบเสร็จ
                             </button>
-                            <div className="space-y-3">
-                                {exportConfigs.map(config => (
-                                    <button
-                                        key={config.type}
-                                        onClick={() => handleExport(config.type, config.data, config.headers, config.title)}
-                                        disabled={isExportingAll || !!isExporting}
-                                        className="w-full text-left p-4 bg-white border border-gray-200 rounded-lg flex items-center justify-between hover:bg-gray-50 disabled:opacity-50 disabled:cursor-wait transition-colors"
-                                    >
-                                        <span className="font-medium text-gray-700">{config.label}</span>
-                                        <span className="text-sm text-gray-500">
-                                            {isExporting === config.title ? 'กำลังส่งออก...' : `(${config.data.length} รายการ)`}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
+                            <button
+                                onClick={() => handleGenerateDoc('Tax Invoice')}
+                                disabled={!selectedBookingId}
+                                className="flex-1 px-4 py-2 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 disabled:bg-gray-400"
+                            >
+                                สร้างใบกำกับภาษี
+                            </button>
                         </div>
                     </div>
                 );

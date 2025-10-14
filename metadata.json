@@ -1,5 +1,7 @@
 {
   "name": "Vipat Hotel Management System",
   "description": "A mobile-first Hotel Management Web Application powered by a Gemini AI Assistant to streamline operations like bookings, finance, and document generation.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

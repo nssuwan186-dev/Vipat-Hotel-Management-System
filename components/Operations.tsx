@@ -1,0 +1,79 @@
+import React, { useState } from 'react';
+import type { Booking, Guest, Room, Task, Employee, TaskStatus } from '../types';
+import Bookings from './Bookings';
+import Tasks from './Tasks';
+
+interface OperationsProps {
+    bookings: Booking[];
+    guests: Guest[];
+    rooms: Room[];
+    tasks: Task[];
+    employees: Employee[];
+    addBooking: (guestName: string, phone: string, roomNumber: string, checkIn: string, checkOut: string, source?: 'ai' | 'manual') => Promise<string>;
+    updateBooking: (bookingId: string, newDetails: any) => Promise<string>;
+    deleteBooking: (bookingId: string) => Promise<string>;
+    addTask: (description: string, assignedTo: string, relatedTo: string, dueDate?: string) => Promise<string>;
+    updateTaskStatus: (taskId: string, newStatus: TaskStatus) => void;
+    bookingRoomFilter: string | null;
+    setBookingRoomFilter: (roomId: string | null) => void;
+}
+
+const Operations: React.FC<OperationsProps> = (props) => {
+    const [activeTab, setActiveTab] = useState('การจอง');
+    const tabs = ['การจอง', 'การจัดการงาน'];
+    
+    const renderTabContent = () => {
+        switch(activeTab) {
+            case 'การจอง':
+                return <Bookings 
+                    bookings={props.bookings}
+                    guests={props.guests}
+                    rooms={props.rooms}
+                    addBooking={props.addBooking}
+                    updateBooking={props.updateBooking}
+                    deleteBooking={props.deleteBooking}
+                    bookingRoomFilter={props.bookingRoomFilter}
+                    setBookingRoomFilter={props.setBookingRoomFilter}
+                />;
+            case 'การจัดการงาน':
+                return <Tasks
+                    tasks={props.tasks}
+                    employees={props.employees}
+                    rooms={props.rooms}
+                    addTask={props.addTask}
+                    updateTaskStatus={props.updateTaskStatus}
+                />;
+            default:
+                return null;
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-lg">
+                <div className="border-b border-gray-200 mb-6">
+                    <nav className="-mb-px flex space-x-6 overflow-x-auto">
+                        {tabs.map(tab => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors duration-200 ${
+                                    activeTab === tab
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                            >
+                                {tab}
+                            </button>
+                        ))}
+                    </nav>
+                </div>
+                <div>
+                    {renderTabContent()}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default Operations;

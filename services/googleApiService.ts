@@ -1,5 +1,4 @@
-// Fix: Replaced server-side Google Apps Script code with a client-side fetch implementation.
-// This resolves module import errors and type-checking failures by making this file a valid TypeScript module.
+// This service sends data to a Google Apps Script web app for exporting to Google Sheets.
 import type { MultiSheetExportPayload } from '../types';
 import { GOOGLE_APPS_SCRIPT_URL } from './googleApiCredentials';
 
@@ -10,14 +9,43 @@ interface GoogleApiResult {
 }
 
 /**
+ * A wrapper for fetch that includes a retry mechanism with exponential backoff.
+ * @param url The URL to fetch.
+ * @param options The fetch options.
+ * @param retries The number of retry attempts.
+ * @param initialDelay The initial delay between retries in milliseconds.
+ * @returns A promise that resolves to the fetch Response.
+ */
+const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, initialDelay = 1000): Promise<Response> => {
+    let delay = initialDelay;
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            // Only retry on transient server errors (5xx) or network failures.
+            // Client errors (4xx) are unlikely to succeed on retry and should fail immediately.
+            if (response.ok || response.status < 500) {
+                return response;
+            }
+            console.warn(`Attempt ${i + 1} failed with status ${response.status}. Retrying in ${delay / 1000}s...`);
+        } catch (error) {
+            // This catches network errors like "Failed to fetch"
+            if (i === retries - 1) throw error; // Rethrow the last error if all retries fail
+            console.warn(`Attempt ${i + 1} failed with a network error. Retrying in ${delay / 1000}s...`);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // Exponential backoff
+    }
+    // If all retries fail, throw a final, user-friendly error.
+    throw new Error(`ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้หลังจากการพยายาม ${retries} ครั้ง`);
+};
+
+/**
  * Sends data to a Google Apps Script web app to create a Google Sheet.
  * @param payload The data to be exported, containing one or more sheets.
  * @returns A promise that resolves to a result object from the API.
  */
 export const exportToGoogleSheets = async (payload: MultiSheetExportPayload): Promise<GoogleApiResult> => {
-    // Fix: Removed check against a placeholder URL. The comparison always evaluates to false
-    // because GOOGLE_APPS_SCRIPT_URL is a constant with a specific, non-placeholder value,
-    // which causes a TypeScript type error.
     if (!GOOGLE_APPS_SCRIPT_URL) {
         const errorMessage = "Google Apps Script URL is not configured. Please update it in services/googleApiCredentials.ts";
         console.error(errorMessage);
@@ -28,23 +56,28 @@ export const exportToGoogleSheets = async (payload: MultiSheetExportPayload): Pr
     }
 
     try {
-        // Google Apps Script doPost(e) expects parameters in e.parameter.
-        // For a POST request, this is typically from a URL-encoded form body.
-        const body = new URLSearchParams();
-        body.append('payload', JSON.stringify(payload));
-
-        // Note: Google Apps Script web apps can be tricky with CORS and redirects.
-        // This implementation assumes the script is deployed to be accessible by "Anyone"
-        // and correctly returns a JSON response without redirects for POST requests.
-        const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+        const response = await fetchWithRetry(GOOGLE_APPS_SCRIPT_URL, {
             method: 'POST',
-            body: body,
+            headers: {
+                // Sending as a raw JSON payload. The Apps Script backend is expected
+                // to parse this from the `e.postData.contents` property of the event object.
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+            redirect: 'follow', // This is often required for Apps Script web apps.
         });
 
         if (!response.ok) {
-            // Try to get more specific error text from the response body if available
             const errorText = await response.text();
-            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+            let errorMessage = `HTTP error! Status: ${response.status}. Message: ${errorText || 'No details from server.'}`;
+            if (response.status >= 500) {
+                errorMessage = `เกิดข้อผิดพลาดบนเซิร์ฟเวอร์ (Status: ${response.status}). กรุณาลองอีกครั้งในภายหลัง`;
+            } else if (response.status === 401 || response.status === 403) {
+                errorMessage = `ไม่ได้รับอนุญาตให้เข้าถึงบริการส่งออกข้อมูล`;
+            } else if (response.status >= 400) {
+                errorMessage = `คำขอไม่ถูกต้อง (Status: ${response.status}). กรุณาตรวจสอบข้อมูลที่ส่ง`;
+            }
+            throw new Error(errorMessage);
         }
 
         const result: GoogleApiResult = await response.json();
@@ -54,7 +87,7 @@ export const exportToGoogleSheets = async (payload: MultiSheetExportPayload): Pr
         console.error("Error exporting to Google Sheets:", error);
         return {
             success: false,
-            message: error.message || "An unknown error occurred during the export process."
+            message: `เกิดข้อผิดพลาดในการส่งออก: ${error.message || "An unknown error occurred."}`
         };
     }
 };

@@ -1,8 +1,22 @@
-import type { Room, Guest, Booking, Expense, Employee, Attendance, Tenant, Invoice, Task } from '../types';
+import type { Room, Guest, Booking, Expense, Employee, Attendance, Tenant, Invoice, Task, Income, IncomeCategory, ExpenseCategory } from '../types';
 
 export const today = new Date();
 today.setHours(0, 0, 0, 0);
 export const aMonthFromNow = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+
+export const mockExpenseCategories: ExpenseCategory[] = [
+    { id: 'ECAT01', name: 'Utilities', order: 1 },
+    { id: 'ECAT02', name: 'Supplies', order: 2 },
+    { id: 'ECAT03', name: 'Maintenance', order: 3 },
+    { id: 'ECAT04', name: 'Salaries', order: 4 },
+];
+
+export const mockIncomeCategories: IncomeCategory[] = [
+    { id: 'ICAT01', name: 'Food & Beverage', order: 1 },
+    { id: 'ICAT02', name: 'Laundry Service', order: 2 },
+    { id: 'ICAT03', name: 'Other Income', order: 3 },
+];
+
 
 export const mockRooms: Room[] = [
   { id: 'R01', number: 'A101', type: 'Standard', price: 400, status: 'Occupied' },
@@ -106,10 +120,15 @@ export const mockBookings: Booking[] = [
 
 
 export const mockExpenses: Expense[] = [
-    { id: 'E01', date: new Date(new Date().setDate(today.getDate() - 2)), category: 'Utilities', description: 'Electricity Bill', amount: 5500 },
-    { id: 'E02', date: new Date(new Date().setDate(today.getDate() - 1)), category: 'Supplies', description: 'Cleaning Supplies', amount: 1200 },
-    { id: 'E03', date: new Date(new Date().setDate(today.getDate())), category: 'Maintenance', description: 'Fix Air Conditioner Room 103', amount: 800 },
-    { id: 'E04', date: new Date(new Date().setMonth(today.getMonth() - 1)), category: 'Salaries', description: 'Staff salaries for last month', amount: 50000 },
+    { id: 'E01', date: new Date(new Date().setDate(today.getDate() - 2)), categoryId: 'ECAT01', description: 'Electricity Bill', amount: 5500 },
+    { id: 'E02', date: new Date(new Date().setDate(today.getDate() - 1)), categoryId: 'ECAT02', description: 'Cleaning Supplies', amount: 1200 },
+    { id: 'E03', date: new Date(new Date().setDate(today.getDate())), categoryId: 'ECAT03', description: 'Fix Air Conditioner Room 103', amount: 800 },
+    { id: 'E04', date: new Date(new Date().setMonth(today.getMonth() - 1)), categoryId: 'ECAT04', description: 'Staff salaries for last month', amount: 50000 },
+];
+
+export const mockIncome: Income[] = [
+    { id: 'I01', date: new Date(new Date().setDate(today.getDate() - 1)), categoryId: 'ICAT02', description: 'Laundry for Room A101', amount: 250 },
+    { id: 'I02', date: new Date(), categoryId: 'ICAT01', description: 'Minibar - Room A104', amount: 400 },
 ];
 
 export const mockEmployees: Employee[] = [

@@ -1,11 +1,14 @@
+// FIX: Import React to provide types for React.FC and React.SVGProps.
+import React from 'react';
 import type { Page } from './types';
-import { DashboardIcon, BookingsIcon, FinanceIcon, DataManagementIcon, ReportsIcon, TasksIcon } from './components/icons/Icons';
+import { DashboardIcon, BookingsIcon, FinanceIcon, ReportsIcon, DataManagementIcon, UserIcon, MicrophoneIcon } from './components/icons/Icons';
 
 export const NAV_ITEMS: { name: Page; icon: React.FC<React.SVGProps<SVGSVGElement>> }[] = [
   { name: 'ภาพรวม', icon: DashboardIcon },
-  { name: 'การจอง', icon: BookingsIcon },
+  { name: 'การดำเนินงาน', icon: BookingsIcon },
   { name: 'การเงิน', icon: FinanceIcon },
-  { name: 'จัดการข้อมูล', icon: DataManagementIcon },
+  { name: 'ลูกค้า', icon: UserIcon },
+  { name: 'Live Chat', icon: MicrophoneIcon },
   { name: 'เอกสารและรายงาน', icon: ReportsIcon },
-  { name: 'การจัดการงาน', icon: TasksIcon },
+  { name: 'การจัดการข้อมูล', icon: DataManagementIcon },
 ];

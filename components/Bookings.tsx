@@ -13,9 +13,11 @@ interface BookingsProps {
     bookings: Booking[];
     guests: Guest[];
     rooms: Room[];
-    addBooking: (guestName: string, phone: string, roomNumber: string, checkIn: string, checkOut: string) => string;
-    updateBooking: (bookingId: string, newDetails: any) => string;
-    deleteBooking: (bookingId: string) => string;
+    addBooking: (guestName: string, phone: string, roomNumber: string, checkIn: string, checkOut: string) => Promise<string>;
+    updateBooking: (bookingId: string, newDetails: any) => Promise<string>;
+    deleteBooking: (bookingId: string) => Promise<string>;
+    bookingRoomFilter: string | null;
+    setBookingRoomFilter: (roomId: string | null) => void;
 }
 
 const BookingRow: FC<{booking: Booking, guest?: Guest, room?: Room, onEdit: () => void, onDelete: () => void}> = ({ booking, guest, room, onEdit, onDelete }) => {
@@ -44,7 +46,45 @@ const BookingRow: FC<{booking: Booking, guest?: Guest, room?: Room, onEdit: () =
     );
 }
 
-const CalendarView: FC<{bookings: Booking[], rooms: Room[]}> = ({bookings, rooms}) => {
+interface DayDetailsModalProps {
+    date: Date;
+    bookings: Booking[];
+    guests: Guest[];
+    rooms: Room[];
+    onClose: () => void;
+}
+
+const DayDetailsModal: FC<DayDetailsModalProps> = ({ date, bookings, guests, rooms, onClose }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4" onClick={onClose}>
+        <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-bold mb-4 text-gray-800">
+                การจองวันที่ {date.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </h2>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+                {bookings.map(booking => {
+                    const guest = guests.find(g => g.id === booking.guestId);
+                    const room = rooms.find(r => r.id === booking.roomId);
+                    return (
+                        <div key={booking.id} className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                            <p className="font-semibold text-blue-700">{guest?.name || 'N/A'}</p>
+                            <p className="text-sm text-gray-600">
+                                <span className="font-medium">ห้อง:</span> {room?.number || 'N/A'} | <span className="font-medium">สถานะ:</span> {bookingStatusMap[booking.status]}
+                            </p>
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="flex justify-end pt-4 mt-2 border-t">
+                <button onClick={onClose} className="px-5 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300">
+                    ปิด
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+
+const CalendarView: FC<{bookings: Booking[], rooms: Room[], onDayClick: (date: Date, bookings: Booking[]) => void}> = ({bookings, rooms, onDayClick}) => {
     const [currentDate, setCurrentDate] = useState(new Date());
 
     const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
@@ -82,14 +122,22 @@ const CalendarView: FC<{bookings: Booking[], rooms: Room[]}> = ({bookings, rooms
             </div>
             <div className="grid grid-cols-7 gap-1">
                 {calendarDays.map(day => (
-                    <div key={day.key} className={`h-24 p-1 border border-gray-200 rounded-md ${day.date ? 'bg-white' : 'bg-gray-50'}`}>
-                        {day.date && <span className="text-xs font-semibold">{day.date.getDate()}</span>}
-                        <div className="mt-1 space-y-0.5 overflow-y-auto max-h-16">
-                            {day.bookings.map(b => {
-                                const room = rooms.find(r => r.id === b.roomId);
-                                return <div key={b.id} className="text-xs bg-blue-100 text-blue-800 rounded px-1 truncate">ห้อง {room?.number}</div>
-                            })}
-                        </div>
+                    <div 
+                        key={day.key} 
+                        className={`h-24 p-1 border border-gray-200 rounded-md transition-colors flex flex-col ${day.date ? 'bg-white' : 'bg-gray-50'} ${day.bookings.length > 0 ? 'cursor-pointer hover:bg-blue-50' : ''}`}
+                        onClick={() => day.date && onDayClick(day.date, day.bookings)}
+                    >
+                        {day.date ? (
+                            <>
+                                <div className="text-xs font-semibold text-gray-600 self-end">{day.date.getDate()}</div>
+                                {day.bookings.length > 0 && (
+                                    <div className="flex flex-col items-center justify-center flex-grow -mt-4">
+                                        <div className="text-xl font-bold text-blue-600">{day.bookings.length}</div>
+                                        <div className="text-xs text-gray-500 -mt-1">การจอง</div>
+                                    </div>
+                                )}
+                            </>
+                        ) : null}
                     </div>
                 ))}
             </div>
@@ -105,9 +153,9 @@ const NewBookingForm: FC<{addBooking: BookingsProps['addBooking']}> = ({addBooki
     const [checkOut, setCheckOut] = useState('');
     const [message, setMessage] = useState('');
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const result = addBooking(guestName, phone, roomNumber, checkIn, checkOut);
+        const result = await addBooking(guestName, phone, roomNumber, checkIn, checkOut);
         setMessage(result);
         if(result.includes("สำเร็จแล้ว")){
             setGuestName('');
@@ -152,7 +200,7 @@ interface EditBookingModalProps {
     guests: Guest[];
     rooms: Room[];
     onClose: () => void;
-    onUpdate: (bookingId: string, details: any) => string;
+    onUpdate: (bookingId: string, details: any) => Promise<string>;
 }
 
 const EditBookingModal: FC<EditBookingModalProps> = ({ booking, guests, rooms, onClose, onUpdate }) => {
@@ -181,9 +229,9 @@ const EditBookingModal: FC<EditBookingModalProps> = ({ booking, guests, rooms, o
         setFormState({ ...formState, [e.target.name]: e.target.value });
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const result = onUpdate(booking.id, {
+        const result = await onUpdate(booking.id, {
             guestName: formState.guestName,
             phone: formState.phone,
             roomNumber: formState.roomNumber,
@@ -233,18 +281,27 @@ const EditBookingModal: FC<EditBookingModalProps> = ({ booking, guests, rooms, o
 };
 
 
-const Bookings: React.FC<BookingsProps> = ({ bookings, guests, rooms, addBooking, updateBooking, deleteBooking }) => {
+const Bookings: React.FC<BookingsProps> = ({ bookings, guests, rooms, addBooking, updateBooking, deleteBooking, bookingRoomFilter, setBookingRoomFilter }) => {
     const [activeTab, setActiveTab] = useState('รายการจองทั้งหมด');
     const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
     const [bookingToDelete, setBookingToDelete] = useState<Booking | null>(null);
     const [sortOption, setSortOption] = useState('checkIn-desc');
     const [message, setMessage] = useState('');
+    const [selectedDateDetails, setSelectedDateDetails] = useState<{ date: Date; bookings: Booking[] } | null>(null);
 
     const tabs = ['รายการจองทั้งหมด', 'ปฏิทิน', 'สร้างการจองใหม่'];
 
+    const roomForFilter = useMemo(() => {
+        if (!bookingRoomFilter) return null;
+        return rooms.find(r => r.id === bookingRoomFilter);
+    }, [bookingRoomFilter, rooms]);
+
     const sortedBookings = useMemo(() => {
-        const sortableBookings = [...bookings];
-        sortableBookings.sort((a, b) => {
+        const filtered = bookingRoomFilter 
+            ? bookings.filter(b => b.roomId === bookingRoomFilter)
+            : [...bookings];
+
+        filtered.sort((a, b) => {
           switch (sortOption) {
             case 'checkIn-asc':
               return new Date(a.checkInDate).getTime() - new Date(b.checkInDate).getTime();
@@ -261,15 +318,21 @@ const Bookings: React.FC<BookingsProps> = ({ bookings, guests, rooms, addBooking
               return new Date(b.checkInDate).getTime() - new Date(a.checkInDate).getTime();
           }
         });
-        return sortableBookings;
-      }, [bookings, sortOption]);
+        return filtered;
+      }, [bookings, sortOption, bookingRoomFilter]);
 
-    const handleDeleteBooking = () => {
+    const handleDeleteBooking = async () => {
         if (bookingToDelete) {
-            const result = deleteBooking(bookingToDelete.id);
+            const result = await deleteBooking(bookingToDelete.id);
             setMessage(result);
             setBookingToDelete(null);
             setTimeout(() => setMessage(''), 3000);
+        }
+    };
+
+    const handleDayClick = (date: Date, bookingsOnDay: Booking[]) => {
+        if (bookingsOnDay.length > 0) {
+            setSelectedDateDetails({ date, bookings: bookingsOnDay });
         }
     };
 
@@ -278,6 +341,19 @@ const Bookings: React.FC<BookingsProps> = ({ bookings, guests, rooms, addBooking
             case 'รายการจองทั้งหมด':
                 return (
                     <div>
+                        {roomForFilter && (
+                            <div className="p-3 mb-4 bg-blue-50 border border-blue-200 rounded-lg flex justify-between items-center">
+                                <p className="text-sm text-blue-800">
+                                    <span className="font-semibold">กำลังแสดงการจองสำหรับห้อง:</span> {roomForFilter.number} ({roomForFilter.type})
+                                </p>
+                                <button
+                                    onClick={() => setBookingRoomFilter(null)}
+                                    className="px-3 py-1 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600"
+                                >
+                                    ล้างตัวกรอง
+                                </button>
+                            </div>
+                        )}
                         <div className="flex justify-end mb-4">
                              <select
                                 value={sortOption}
@@ -323,7 +399,7 @@ const Bookings: React.FC<BookingsProps> = ({ bookings, guests, rooms, addBooking
                     </div>
                 );
             case 'ปฏิทิน':
-                return <CalendarView bookings={bookings} rooms={rooms} />;
+                return <CalendarView bookings={bookings} rooms={rooms} onDayClick={handleDayClick} />;
             case 'สร้างการจองใหม่':
                 return <NewBookingForm addBooking={addBooking} />;
             default:
@@ -369,6 +445,15 @@ const Bookings: React.FC<BookingsProps> = ({ bookings, guests, rooms, addBooking
                     onConfirm={handleDeleteBooking}
                     title="ยืนยันการลบการจอง"
                     message={`คุณแน่ใจหรือไม่ว่าต้องการลบการจอง ID: ${bookingToDelete.id} ของคุณ ${guests.find(g => g.id === bookingToDelete.guestId)?.name}? การกระทำนี้ไม่สามารถย้อนกลับได้`}
+                />
+            )}
+            {selectedDateDetails && (
+                <DayDetailsModal
+                    date={selectedDateDetails.date}
+                    bookings={selectedDateDetails.bookings}
+                    guests={guests}
+                    rooms={rooms}
+                    onClose={() => setSelectedDateDetails(null)}
                 />
             )}
         </>

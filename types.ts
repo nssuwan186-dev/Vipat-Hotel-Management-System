@@ -1,4 +1,4 @@
-export type Page = 'ภาพรวม' | 'การจอง' | 'การเงิน' | 'จัดการข้อมูล' | 'เอกสารและรายงาน' | 'การจัดการงาน';
+export type Page = 'ภาพรวม' | 'การดำเนินงาน' | 'การเงิน' | 'ลูกค้า' | 'Live Chat' | 'เอกสารและรายงาน' | 'การจัดการข้อมูล';
 
 export interface Room {
   id: string;
@@ -25,13 +25,34 @@ export interface Booking {
   totalPrice: number;
 }
 
+export interface ExpenseCategory {
+    id: string;
+    name: string;
+    order: number;
+}
+
+export interface IncomeCategory {
+    id: string;
+    name: string;
+    order: number;
+}
+
 export interface Expense {
     id: string;
     date: Date;
-    category: 'Utilities' | 'Supplies' | 'Maintenance' | 'Salaries';
+    categoryId: string;
     description: string;
     amount: number;
 }
+
+export interface Income {
+    id: string;
+    date: Date;
+    categoryId: string;
+    description: string;
+    amount: number;
+}
+
 
 export interface AiChatMessage {
     role: 'user' | 'model';

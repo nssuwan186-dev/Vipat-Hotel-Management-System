@@ -19,11 +19,28 @@ const ChatBubble: FC<{ message: AiChatMessage }> = ({ message }) => {
                 </div>
             );
         }
+
+        // Try to parse message.text as a function call for nice display
+        try {
+            const parsed = JSON.parse(message.text);
+            if (parsed.functionCall) {
+                const { name, args } = parsed.functionCall;
+                return (
+                    <div className="text-xs p-2 bg-gray-700 text-gray-100 rounded-md font-mono">
+                        <p className="font-semibold mb-1">Calling Tool: <code className="bg-gray-800 px-1 rounded">{name}</code></p>
+                        <pre className="whitespace-pre-wrap text-gray-300">{JSON.stringify(args, null, 2)}</pre>
+                    </div>
+                );
+            }
+        } catch (e) {
+            // Not a JSON or not a function call, render as plain text
+        }
+        
         return <p>{message.text}</p>;
     };
 
     return (
-        <div className={`max-w-xs md:max-w-md p-2 rounded-2xl ${bubbleClasses}`}>
+        <div className={`max-w-xs md:max-w-md p-3 rounded-2xl ${bubbleClasses}`}>
             {renderContent()}
         </div>
     );
@@ -35,8 +52,8 @@ interface AiAssistantProps {
     setChatHistory: React.Dispatch<React.SetStateAction<AiChatMessage[]>>;
     context: { rooms: Room[], bookings: Booking[], guests: Guest[], expenses: Expense[], tenants: Tenant[], employees: Employee[], invoices: Invoice[] };
     actions: {
-        addBooking: (guestName: string, phone: string, roomNumber: string, checkIn: string, checkOut: string) => string;
-        addDocument: (docType: GeneratedDocument['type'], title: string, content: string) => string;
+        addBooking: (guestName: string, phone: string, roomNumber: string, checkIn: string, checkOut: string, source: 'ai') => Promise<string>;
+        addDocument: (docType: GeneratedDocument['type'], title: string, content: string) => Promise<string>;
     };
 }
 
@@ -86,14 +103,16 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ chatHistory, setChatHistory, 
         const apiHistory: Content[] = [];
         history.forEach(msg => {
             if (msg.isFunctionResponse) {
-                apiHistory.push({
-                    role: 'user', 
-                    parts: [{ functionResponse: JSON.parse(msg.text) }]
-                });
+                try {
+                    apiHistory.push({
+                        role: 'user', 
+                        parts: [{ functionResponse: JSON.parse(msg.text) }]
+                    });
+                } catch(e) { /* ignore malformed JSON */ }
             } else if (msg.role === 'model' && msg.text.startsWith('{"functionCall"')) {
                  try {
                      const parsed = JSON.parse(msg.text);
-                     apiHistory.push({ role: 'model', parts: [{ functionCall: parsed.functionCall }] });
+                     apiHistory.push({ role: 'model', parts: [parsed] }); // `parsed` is already { functionCall: ... }
                  } catch(e) { /* ignore malformed JSON */ }
             } else {
                 apiHistory.push({ role: msg.role, parts: [{ text: msg.text }] });
@@ -215,64 +234,85 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ chatHistory, setChatHistory, 
         }
     };
 
-
-    const handleFunctionCalls = async (response: GenerateContentResponse): Promise<GenerateContentResponse> => {
-        if (!response.functionCalls || response.functionCalls.length === 0) {
-            return response;
-        }
-        
-        const fc = response.functionCalls[0];
-        const { name, args } = fc;
-
-        setChatHistory(prev => [...prev, { role: 'model', text: `กำลังเรียกใช้ฟังก์ชัน: ${name} ด้วยข้อมูล: ${JSON.stringify(args)}` }]);
-
-        let functionResult: any;
-        if (name === 'create_booking') {
-            functionResult = actions.addBooking(args.guestName as string, (args.phoneNumber as string) || '', args.roomNumber as string, args.checkInDate as string, args.checkOutDate as string);
-        } else if (name === 'get_room_availability') {
-            functionResult = getRoomAvailability(args.checkInDate as string, args.checkOutDate as string, args.roomType as Room['type']);
-        } else if (name === 'generate_document') {
-            functionResult = await generateAndStoreDocument(args.documentType as GeneratedDocument['type'], args.referenceId as string, args.details as string | undefined);
-        } else if (name === 'generate_receipt') {
-            functionResult = await generateAndStoreReceipt(args.bookingId as string, args.totalAmount as number);
-        } else if (name === 'generate_tax_invoice') {
-            functionResult = await generateAndStoreTaxInvoice(args.bookingId as string, args.totalAmount as number);
-        } else {
-            functionResult = `ข้อผิดพลาด: ไม่รู้จักฟังก์ชัน ${name}`;
-        }
-        
-        const functionResponsePart: Part = {
-            functionResponse: { name, response: { result: functionResult } }
-        };
-
-        setChatHistory(prev => [...prev, { role: 'user', text: JSON.stringify(functionResponsePart.functionResponse), isFunctionResponse: true }]);
-        
-        const currentApiHistory = convertChatHistoryToApiContent(chatHistory);
-        const newHistory: Content[] = [...currentApiHistory, {role: 'model', parts: [{functionCall: fc}]}, {role: 'user', parts: [functionResponsePart]}];
-        
-        return await runAiChat(newHistory, context);
-    };
-
-
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!userInput.trim() || isLoading) return;
 
-        const newUserMessage: AiChatMessage = { role: 'user', text: userInput };
-        const newHistoryForApi = [...chatHistory, newUserMessage];
-        setChatHistory(newHistoryForApi);
+        // 1. Create the user message and update UI history
+        const userMessage: AiChatMessage = { role: 'user', text: userInput };
+        let currentUiHistory = [...chatHistory, userMessage];
+        setChatHistory(currentUiHistory);
         setUserInput('');
         setIsLoading(true);
 
-        const apiHistory = convertChatHistoryToApiContent(newHistoryForApi);
+        // 2. Convert to API format and make the first call
+        let currentApiHistory = convertChatHistoryToApiContent(currentUiHistory);
+        let response = await runAiChat(currentApiHistory, context);
 
-        let response = await runAiChat(apiHistory, context);
-        
-        response = await handleFunctionCalls(response);
+        // 3. Handle potential function calls in a loop
+        while (response.functionCalls && response.functionCalls.length > 0) {
+            const fc = response.functionCalls[0];
 
+            // Create a plain object for the function call part to avoid circular references and for serialization.
+            const functionCallPart: Part = {
+                functionCall: { 
+                    name: fc.name, 
+                    // By spreading fc.args, we create a new plain object, which prevents
+                    // the "circular structure" error when serializing with JSON.stringify.
+                    args: { ...fc.args } 
+                }
+            };
+
+            // Add the function call to both UI and API histories
+            const modelFunctionCallMessage: AiChatMessage = {
+                role: 'model',
+                text: JSON.stringify(functionCallPart) // Store as JSON for `convertChatHistoryToApiContent`
+            };
+            currentUiHistory = [...currentUiHistory, modelFunctionCallMessage];
+            setChatHistory(currentUiHistory);
+            currentApiHistory.push({ role: 'model', parts: [functionCallPart] });
+
+            // Execute the function
+            let functionResult: any;
+            if (fc.name === 'create_booking') {
+                functionResult = await actions.addBooking(fc.args.guestName as string, (fc.args.phoneNumber as string) || '', fc.args.roomNumber as string, fc.args.checkInDate as string, fc.args.checkOutDate as string, 'ai');
+            } else if (fc.name === 'get_room_availability') {
+                functionResult = getRoomAvailability(fc.args.checkInDate as string, fc.args.checkOutDate as string, fc.args.roomType as Room['type']);
+            } else if (fc.name === 'generate_document') {
+                functionResult = await generateAndStoreDocument(fc.args.documentType as GeneratedDocument['type'], fc.args.referenceId as string, fc.args.details as string | undefined);
+            } else if (fc.name === 'generate_receipt') {
+                functionResult = await generateAndStoreReceipt(fc.args.bookingId as string, fc.args.totalAmount as number);
+            } else if (fc.name === 'generate_tax_invoice') {
+                functionResult = await generateAndStoreTaxInvoice(fc.args.bookingId as string, fc.args.totalAmount as number);
+            } else {
+                functionResult = `ข้อผิดพลาด: ไม่รู้จักฟังก์ชัน ${fc.name}`;
+            }
+
+            // Create the function response part
+            const functionResponsePart: Part = {
+                functionResponse: { name: fc.name, response: { result: functionResult } }
+            };
+
+            // Add the function response to both UI and API histories
+            const userFunctionResponseMessage: AiChatMessage = {
+                role: 'user',
+                text: JSON.stringify(functionResponsePart.functionResponse),
+                isFunctionResponse: true
+            };
+            currentUiHistory = [...currentUiHistory, userFunctionResponseMessage];
+            setChatHistory(currentUiHistory);
+            currentApiHistory.push({ role: 'user', parts: [functionResponsePart] });
+
+            // Call the API again with the updated history
+            response = await runAiChat(currentApiHistory, context);
+        }
+
+        // 4. Add the final model response to the UI history
         const modelResponseText = response.text;
-        if(modelResponseText) {
-            setChatHistory(prev => [...prev, { role: 'model', text: modelResponseText }]);
+        if (modelResponseText) {
+            const modelFinalMessage: AiChatMessage = { role: 'model', text: modelResponseText };
+            currentUiHistory = [...currentUiHistory, modelFinalMessage];
+            setChatHistory(currentUiHistory);
         }
 
         setIsLoading(false);

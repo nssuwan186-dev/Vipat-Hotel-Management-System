@@ -13,10 +13,28 @@
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "recharts": "https://aistudiocdn.com/recharts@^2.12.7"
+    "recharts": "https://aistudiocdn.com/recharts@^2.12.7",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.4.0/"
   }
 }
 </script>
+<style>
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .animate-fadeInUp {
+    animation: fadeInUp 0.7s ease-out forwards;
+  }
+</style>
 </head>
   <body class="bg-gray-100">
     <div id="root"></div>
