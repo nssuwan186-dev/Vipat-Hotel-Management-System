@@ -10,7 +10,7 @@ interface TaskCardProps {
 
 const TaskCard: React.FC<TaskCardProps> = ({ task, employee, room, onStatusChange }) => {
     
-    const statusOptions: TaskStatus[] = ['To Do', 'In Progress', 'Done'];
+    const statusOptions: TaskStatus[] = ['ต้องทำ', 'กำลังทำ', 'เสร็จแล้ว'];
 
     const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         onStatusChange(task.id, e.target.value as TaskStatus);
@@ -70,7 +70,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, employees,
         }
     };
     
-    const activeEmployees = employees.filter(e => e.status === 'Active');
+    const activeEmployees = employees.filter(e => e.status === 'ทำงานอยู่');
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4" onClick={onClose}>
@@ -162,19 +162,19 @@ const Tasks: React.FC<TasksProps> = ({ tasks, employees, rooms, addTask, updateT
 
         // Group into columns
         return {
-            'To Do': filteredTasks.filter(t => t.status === 'To Do'),
-            'In Progress': filteredTasks.filter(t => t.status === 'In Progress'),
-            'Done': filteredTasks.filter(t => t.status === 'Done'),
+            'ต้องทำ': filteredTasks.filter(t => t.status === 'ต้องทำ'),
+            'กำลังทำ': filteredTasks.filter(t => t.status === 'กำลังทำ'),
+            'เสร็จแล้ว': filteredTasks.filter(t => t.status === 'เสร็จแล้ว'),
         };
     }, [tasks, statusFilter, employeeFilter, sortOption]);
     
     const columnTitles: Record<TaskStatus, {title: string, textColor: string, countColor: string}> = {
-        'To Do': { title: 'ต้องทำ', textColor: 'text-red-600', countColor: 'bg-red-100 text-red-700' },
-        'In Progress': { title: 'กำลังทำ', textColor: 'text-yellow-600', countColor: 'bg-yellow-100 text-yellow-700' },
-        'Done': { title: 'เสร็จแล้ว', textColor: 'text-green-600', countColor: 'bg-green-100 text-green-700' },
+        'ต้องทำ': { title: 'ต้องทำ', textColor: 'text-red-600', countColor: 'bg-red-100 text-red-700' },
+        'กำลังทำ': { title: 'กำลังทำ', textColor: 'text-yellow-600', countColor: 'bg-yellow-100 text-yellow-700' },
+        'เสร็จแล้ว': { title: 'เสร็จแล้ว', textColor: 'text-green-600', countColor: 'bg-green-100 text-green-700' },
     }
 
-    const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Active'), [employees]);
+    const activeEmployees = useMemo(() => employees.filter(e => e.status === 'ทำงานอยู่'), [employees]);
     const columnsToDisplay = statusFilter === 'All' ? (Object.keys(columnTitles) as TaskStatus[]) : [statusFilter];
     const gridClass = statusFilter === 'All' ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1';
 
@@ -194,9 +194,9 @@ const Tasks: React.FC<TasksProps> = ({ tasks, employees, rooms, addTask, updateT
                             <label htmlFor="status-filter" className="block text-sm font-medium text-gray-700 mb-1">สถานะ</label>
                             <select id="status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value as TaskStatus | 'All')} className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
                                 <option value="All">ทั้งหมด</option>
-                                <option value="To Do">ต้องทำ</option>
-                                <option value="In Progress">กำลังทำ</option>
-                                <option value="Done">เสร็จแล้ว</option>
+                                <option value="ต้องทำ">ต้องทำ</option>
+                                <option value="กำลังทำ">กำลังทำ</option>
+                                <option value="เสร็จแล้ว">เสร็จแล้ว</option>
                             </select>
                         </div>
                         <div>

@@ -44,7 +44,10 @@ export function numberToThaiWords(n: number): string {
     }
 
     if (parseInt(decimalPart) > 0) {
-        bahtStr += convertInteger(decimalPart) + "สตางค์";
+        const decimalStr = convertInteger(decimalPart.padStart(2, '0'));
+        if (decimalStr) {
+            bahtStr += decimalStr + "สตางค์";
+        }
     } else {
         bahtStr += "ถ้วน";
     }
@@ -94,7 +97,7 @@ export const generateTaxInvoiceHtml = async ({ booking, guest, room, totalAmount
 
     const formatDateForInvoice = (date: Date) => {
         const d = new Date(date);
-        const year = (d.getFullYear() + 543).toString().slice(-2);
+        const year = (d.getFullYear() + 543).toString();
         const month = (d.getMonth() + 1).toString().padStart(2, '0');
         const day = d.getDate().toString().padStart(2, '0');
         return `${day}/${month}/${year}`;

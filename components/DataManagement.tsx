@@ -43,18 +43,17 @@ const DataManagement: React.FC<DataManagementProps> = ({
     const [itemToDelete, setItemToDelete] = useState<{ type: 'guest' | 'room' | 'tenant' | 'employee', data: any } | null>(null);
     
     // --- UI Mappers ---
+    // FIX: Changed English keys to Thai to match Room['status'] type.
     const roomStatusClasses: Record<Room['status'], string> = {
-        'Available': 'bg-green-100 text-green-800', 'Occupied': 'bg-yellow-100 text-yellow-800',
-        'Cleaning': 'bg-blue-100 text-blue-800', 'Monthly Rental': 'bg-purple-100 text-purple-800'
+        'ว่าง': 'bg-green-100 text-green-800',
+        'ไม่ว่าง': 'bg-yellow-100 text-yellow-800',
+        'ทำความสะอาด': 'bg-blue-100 text-blue-800',
+        'เช่ารายเดือน': 'bg-purple-100 text-purple-800'
     };
-    const roomStatusMap: Record<Room['status'], string> = {
-        'Available': 'ว่าง', 'Occupied': 'ไม่ว่าง', 'Cleaning': 'ทำความสะอาด', 'Monthly Rental': 'เช่ารายเดือน'
-    };
+    // FIX: Changed English keys to Thai to match Employee['status'] type.
     const employeeStatusClasses: Record<Employee['status'], string> = {
-        'Active': 'bg-green-100 text-green-800', 'Inactive': 'bg-gray-100 text-gray-800'
-    };
-    const employeeStatusMap: Record<Employee['status'], string> = {
-        'Active': 'ทำงานอยู่', 'Inactive': 'ลาออกแล้ว'
+        'ทำงานอยู่': 'bg-green-100 text-green-800',
+        'ลาออกแล้ว': 'bg-gray-100 text-gray-800'
     };
     
     // --- Field Definitions for Forms ---
@@ -69,14 +68,17 @@ const DataManagement: React.FC<DataManagementProps> = ({
     ];
     const employeeFields: FormField[] = [
         { name: 'name', label: 'ชื่อพนักงาน', type: 'text', required: true },
-        { name: 'position', label: 'ตำแหน่ง', type: 'select', options: [{value: 'Manager', label: 'Manager'}, {value: 'Receptionist', label: 'Receptionist'}, {value: 'Housekeeping', label: 'Housekeeping'}], required: true },
-        { name: 'salaryType', label: 'ประเภทเงินเดือน', type: 'select', options: [{value: 'Monthly', label: 'รายเดือน'}, {value: 'Daily', label: 'รายวัน'}], required: true },
+        // FIX: Changed select option values to Thai to match Employee['position'] type.
+        { name: 'position', label: 'ตำแหน่ง', type: 'select', options: [{value: 'ผู้จัดการ', label: 'ผู้จัดการ'}, {value: 'พนักงานต้อนรับ', label: 'พนักงานต้อนรับ'}, {value: 'แม่บ้าน', label: 'แม่บ้าน'}], required: true },
+        // FIX: Changed select option values to Thai to match Employee['salaryType'] type.
+        { name: 'salaryType', label: 'ประเภทเงินเดือน', type: 'select', options: [{value: 'รายเดือน', label: 'รายเดือน'}, {value: 'รายวัน', label: 'รายวัน'}], required: true },
         { name: 'salaryRate', label: 'อัตราเงินเดือน/ค่าจ้าง', type: 'number', required: true },
         { name: 'hireDate', label: 'วันที่เริ่มงาน', type: 'date', required: true },
     ];
     const employeeUpdateFields: FormField[] = [
         ...employeeFields.filter(f => f.name !== 'hireDate'),
-        { name: 'status', label: 'สถานะ', type: 'select', options: [{value: 'Active', label: 'ทำงานอยู่'}, {value: 'Inactive', label: 'ลาออกแล้ว'}], required: true },
+        // FIX: Changed select option values to Thai to match Employee['status'] type.
+        { name: 'status', label: 'สถานะ', type: 'select', options: [{value: 'ทำงานอยู่', label: 'ทำงานอยู่'}, {value: 'ลาออกแล้ว', label: 'ลาออกแล้ว'}], required: true },
     ];
     
     // --- Modal Handling ---
@@ -89,13 +91,13 @@ const DataManagement: React.FC<DataManagementProps> = ({
                 setModalConfig({ title: 'เพิ่มห้องพักใหม่', fields: roomFields, initialData: null, onSubmit: (data) => addRoom(data.number, data.type, data.price) });
                 break;
             case 'ผู้เช่ารายเดือน':
-                const tenantFields = [
-                    { name: 'name', label: 'ชื่อผู้เช่า', type: 'text' as const, required: true },
-                    { name: 'phone', label: 'เบอร์โทร', type: 'text' as const },
-                    { name: 'roomId', label: 'ห้อง', type: 'select' as const, options: rooms.filter(r => r.status === 'Available').map(r => ({ value: r.id, label: r.number })), required: true },
-                    { name: 'monthlyRent', label: 'ค่าเช่า (บาท/เดือน)', type: 'number' as const, required: true },
-                    { name: 'contractStartDate', label: 'วันเริ่มสัญญา', type: 'date' as const, required: true },
-                    { name: 'contractEndDate', label: 'วันสิ้นสุดสัญญา', type: 'date' as const, required: true },
+                const tenantFields: FormField[] = [
+                    { name: 'name', label: 'ชื่อผู้เช่า', type: 'text', required: true },
+                    { name: 'phone', label: 'เบอร์โทร', type: 'text' },
+                    { name: 'roomId', label: 'ห้อง', type: 'select', options: rooms.filter(r => r.status === 'ว่าง').map(r => ({ value: r.id, label: r.number })), required: true },
+                    { name: 'monthlyRent', label: 'ค่าเช่า (บาท/เดือน)', type: 'number', required: true },
+                    { name: 'contractStartDate', label: 'วันเริ่มสัญญา', type: 'date', required: true },
+                    { name: 'contractEndDate', label: 'วันสิ้นสุดสัญญา', type: 'date', required: true },
                 ];
                 setModalConfig({ title: 'เพิ่มผู้เช่าใหม่', fields: tenantFields, initialData: null, onSubmit: (data) => addTenant(data.name, data.phone, data.roomId, data.contractStartDate, data.contractEndDate, data.monthlyRent) });
                 break;
@@ -116,13 +118,13 @@ const DataManagement: React.FC<DataManagementProps> = ({
                 break;
             case 'ผู้เช่ารายเดือน':
                 const currentRoom = rooms.find(r => r.id === item.roomId);
-                const roomOptions = [...rooms.filter(r => r.status === 'Available'), ...(currentRoom ? [currentRoom] : [])];
+                const roomOptions = [...rooms.filter(r => r.status === 'ว่าง'), ...(currentRoom ? [currentRoom] : [])];
                 const uniqueRoomOptions = [...new Map(roomOptions.map(r => [r.id, {value: r.id, label: r.number}])).values()];
-                const tenantFields = [
-                    { name: 'name', label: 'ชื่อผู้เช่า', type: 'text' as const, required: true }, { name: 'phone', label: 'เบอร์โทร', type: 'text' as const },
-                    { name: 'roomId', label: 'ห้อง', type: 'select' as const, options: uniqueRoomOptions, required: true },
-                    { name: 'monthlyRent', label: 'ค่าเช่า (บาท/เดือน)', type: 'number' as const, required: true },
-                    { name: 'contractStartDate', label: 'วันเริ่มสัญญา', type: 'date' as const, required: true }, { name: 'contractEndDate', label: 'วันสิ้นสุดสัญญา', type: 'date' as const, required: true },
+                const tenantFields: FormField[] = [
+                    { name: 'name', label: 'ชื่อผู้เช่า', type: 'text', required: true }, { name: 'phone', label: 'เบอร์โทร', type: 'text' },
+                    { name: 'roomId', label: 'ห้อง', type: 'select', options: uniqueRoomOptions, required: true },
+                    { name: 'monthlyRent', label: 'ค่าเช่า (บาท/เดือน)', type: 'number', required: true },
+                    { name: 'contractStartDate', label: 'วันเริ่มสัญญา', type: 'date', required: true }, { name: 'contractEndDate', label: 'วันสิ้นสุดสัญญา', type: 'date', required: true },
                 ];
                 setModalConfig({ title: 'แก้ไขข้อมูลผู้เช่า', fields: tenantFields, initialData: item, onSubmit: (data) => updateTenant(item.id, data) });
                 break;
@@ -200,8 +202,9 @@ const DataManagement: React.FC<DataManagementProps> = ({
                             <th className="p-3 text-left text-sm font-semibold text-gray-600">การกระทำ</th>
                         </tr></thead><tbody>
                         {filteredRooms.map(room => (<tr key={room.id} className="border-b hover:bg-gray-50">
-                            <td className="p-3 text-sm font-medium">{room.number}</td><td className="p-3 text-sm">{room.type}</td><td className="p-3 text-sm">{room.status !== 'Monthly Rental' ? room.price.toLocaleString('th-TH') : '-'}</td>
-                            <td className="p-3"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${roomStatusClasses[room.status]}`}>{roomStatusMap[room.status]}</span></td>
+                            <td className="p-3 text-sm font-medium">{room.number}</td><td className="p-3 text-sm">{room.type}</td><td className="p-3 text-sm">{room.status !== 'เช่ารายเดือน' ? room.price.toLocaleString('th-TH') : '-'}</td>
+                            {/* FIX: Removed redundant roomStatusMap and used room.status directly. */}
+                            <td className="p-3"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${roomStatusClasses[room.status]}`}>{room.status}</span></td>
                             <td className="p-3 text-sm"><button onClick={() => handleEditClick(room)} className="text-blue-600 hover:text-blue-800 font-medium">แก้ไข</button><button onClick={() => setItemToDelete({type: 'room', data: room})} className="text-red-600 hover:text-red-800 font-medium ml-4">ลบ</button></td>
                         </tr>))}</tbody>
                     </table></div>
@@ -243,8 +246,9 @@ const DataManagement: React.FC<DataManagementProps> = ({
                         <td className="p-3 text-sm font-medium">{emp.name}</td>
                         <td className="p-3 text-sm">{emp.position}</td>
                         <td className="p-3 text-sm">{emp.hireDate.toLocaleDateString('th-TH')}</td>
-                        <td className="p-3 text-sm">{emp.salaryType === 'Monthly' ? `รายเดือน (${emp.salaryRate.toLocaleString()})` : `รายวัน (${emp.salaryRate.toLocaleString()})`}</td>
-                        <td className="p-3"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${employeeStatusClasses[emp.status]}`}>{employeeStatusMap[emp.status]}</span></td>
+                        <td className="p-3 text-sm">{emp.salaryType === 'รายเดือน' ? `รายเดือน (${emp.salaryRate.toLocaleString()})` : `รายวัน (${emp.salaryRate.toLocaleString()})`}</td>
+                        {/* FIX: Removed redundant employeeStatusMap and used emp.status directly. */}
+                        <td className="p-3"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${employeeStatusClasses[emp.status]}`}>{emp.status}</span></td>
                         <td className="p-3 text-sm"><button onClick={() => handleEditClick(emp)} className="text-blue-600 hover:text-blue-800 font-medium">แก้ไข</button><button onClick={() => setItemToDelete({type: 'employee', data: emp})} className="text-red-600 hover:text-red-800 font-medium ml-4">ลบ</button></td>
                     </tr>))}</tbody>
                 </table></div>

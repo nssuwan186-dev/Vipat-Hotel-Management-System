@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import type { Booking, Guest, Room, Task, Employee, TaskStatus } from '../types';
+import React, { useState, useEffect } from 'react';
+import type { Booking, Guest, Room, Task, Employee, TaskStatus, RoomStatusFilter } from '../types';
 import Bookings from './Bookings';
 import Tasks from './Tasks';
+import RoomStatusView from './RoomStatusView';
 
 interface OperationsProps {
     bookings: Booking[];
@@ -9,27 +10,41 @@ interface OperationsProps {
     rooms: Room[];
     tasks: Task[];
     employees: Employee[];
-    addBooking: (guestName: string, phone: string, roomNumber: string, checkIn: string, checkOut: string, source?: 'ai' | 'manual') => Promise<string>;
     updateBooking: (bookingId: string, newDetails: any) => Promise<string>;
     deleteBooking: (bookingId: string) => Promise<string>;
     addTask: (description: string, assignedTo: string, relatedTo: string, dueDate?: string) => Promise<string>;
     updateTaskStatus: (taskId: string, newStatus: TaskStatus) => void;
     bookingRoomFilter: string | null;
     setBookingRoomFilter: (roomId: string | null) => void;
+    roomStatusFilter: RoomStatusFilter;
+    setRoomStatusFilter: (filter: RoomStatusFilter) => void;
 }
 
 const Operations: React.FC<OperationsProps> = (props) => {
-    const [activeTab, setActiveTab] = useState('การจอง');
-    const tabs = ['การจอง', 'การจัดการงาน'];
+    const [activeTab, setActiveTab] = useState('สถานะห้องพัก');
+    const tabs = ['สถานะห้องพัก', 'การจอง', 'การจัดการงาน'];
     
+    useEffect(() => {
+        if (props.bookingRoomFilter) {
+            setActiveTab('การจอง');
+        } else if (props.roomStatusFilter) {
+            setActiveTab('สถานะห้องพัก');
+        }
+    }, [props.bookingRoomFilter, props.roomStatusFilter]);
+
     const renderTabContent = () => {
         switch(activeTab) {
+            case 'สถานะห้องพัก':
+                return <RoomStatusView
+                    rooms={props.rooms}
+                    roomStatusFilter={props.roomStatusFilter}
+                    setRoomStatusFilter={props.setRoomStatusFilter}
+                />;
             case 'การจอง':
                 return <Bookings 
                     bookings={props.bookings}
                     guests={props.guests}
                     rooms={props.rooms}
-                    addBooking={props.addBooking}
                     updateBooking={props.updateBooking}
                     deleteBooking={props.deleteBooking}
                     bookingRoomFilter={props.bookingRoomFilter}
@@ -40,7 +55,7 @@ const Operations: React.FC<OperationsProps> = (props) => {
                     tasks={props.tasks}
                     employees={props.employees}
                     rooms={props.rooms}
-                    addTask={props.addTask}
+                    addTask={props.addTask as any} // Cast to satisfy simple string return for now
                     updateTaskStatus={props.updateTaskStatus}
                 />;
             default:

@@ -68,6 +68,7 @@ const LiveChat: React.FC = () => {
     const [transcriptionLog, setTranscriptionLog] = useState<Transcription[]>([]);
     const [currentInputTranscription, setCurrentInputTranscription] = useState('');
     const [currentOutputTranscription, setCurrentOutputTranscription] = useState('');
+    const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
     const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -115,13 +116,13 @@ const LiveChat: React.FC = () => {
             mediaStreamSourceRef.current = null;
         }
         if (inputAudioContextRef.current && inputAudioContextRef.current.state !== 'closed') {
-            await inputAudioContextRef.current.close();
+            await inputAudioContextRef.current.close().catch(e => console.error("Error closing input context:", e));
             inputAudioContextRef.current = null;
         }
         if (outputAudioContextRef.current && outputAudioContextRef.current.state !== 'closed') {
             sourcesRef.current.forEach(source => source.stop());
             sourcesRef.current.clear();
-            await outputAudioContextRef.current.close();
+            await outputAudioContextRef.current.close().catch(e => console.error("Error closing output context:", e));
             outputAudioContextRef.current = null;
         }
 
@@ -130,9 +131,19 @@ const LiveChat: React.FC = () => {
         currentOutputRef.current = '';
         setCurrentInputTranscription('');
         setCurrentOutputTranscription('');
+        setTranscriptionLog([]); // Clear log on stop
     }, []);
 
     const startConversation = useCallback(async () => {
+        setApiKeyError(null);
+        if (!process.env.API_KEY) {
+            const errorMsg = "API Key is not configured. Please set the API_KEY environment variable.";
+            console.error(errorMsg);
+            setApiKeyError(errorMsg);
+            setConnectionStatus('error');
+            return;
+        }
+
         setConnectionStatus('connecting');
         setTranscriptionLog([]);
         
@@ -140,10 +151,9 @@ const LiveChat: React.FC = () => {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             streamRef.current = stream;
 
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             
             // Initialize audio contexts for the new session.
-            // The `webkitAudioContext` is for Safari compatibility.
             inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
             outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
             nextStartTimeRef.current = 0;
@@ -258,6 +268,7 @@ const LiveChat: React.FC = () => {
     }, [stopConversation]);
 
     const getStatusDisplay = () => {
+        if (apiKeyError) return { text: apiKeyError, color: 'text-red-600' };
         switch (connectionStatus) {
             case 'disconnected': return { text: 'กดปุ่มเพื่อเริ่มการสนทนา', color: 'text-gray-500' };
             case 'connecting': return { text: 'กำลังเชื่อมต่อ...', color: 'text-blue-500 animate-pulse' };

@@ -1,50 +1,45 @@
-import React, { useState, useEffect, FC } from 'react';
+import React, { useState, useEffect } from 'react';
+import type { FormField } from '../types';
 
-export interface FormField {
-    name: string;
-    label: string;
-    type: 'text' | 'number' | 'date' | 'select' | 'textarea';
-    options?: { value: string | number; label:string }[];
-    required?: boolean;
-    disabled?: boolean;
-    placeholder?: string;
-}
+export type { FormField };
 
 interface DataFormModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSubmit: (formData: any) => string;
-    title: string;
-    initialData: any | null;
-    fields: FormField[];
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  fields: FormField[];
+  initialData?: any | null;
+  onSubmit: (data: any) => string; // Returns a message
 }
 
-const DataFormModal: FC<DataFormModalProps> = ({ isOpen, onClose, onSubmit, title, initialData, fields }) => {
+const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, title, fields, initialData, onSubmit }) => {
     const [formData, setFormData] = useState<any>({});
     const [message, setMessage] = useState('');
 
     useEffect(() => {
-        if (isOpen) {
-            const initial = fields.reduce((acc, field) => {
-                let value = initialData?.[field.name] ?? '';
-                if (field.type === 'date' && value instanceof Date) {
-                    value = value.toISOString().split('T')[0];
+        if (initialData) {
+            // Pre-format date fields for the input[type=date]
+            const formattedData = { ...initialData };
+            fields.forEach(field => {
+                if (field.type === 'date' && initialData[field.name]) {
+                    formattedData[field.name] = new Date(initialData[field.name]).toISOString().split('T')[0];
                 }
-                acc[field.name] = value;
-                return acc;
-            }, {} as any);
-            setFormData(initial);
-            setMessage('');
+            });
+            setFormData(formattedData);
+        } else {
+            // Set default values for a new form
+            const defaultState: { [key: string]: any } = {};
+            fields.forEach(field => {
+                defaultState[field.name] = '';
+            });
+            setFormData(defaultState);
         }
-    }, [isOpen, initialData, fields]);
+    }, [initialData, fields]);
 
     if (!isOpen) return null;
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-        const { name, value, type } = e.target;
-        // @ts-ignore
-        const finalValue = (type === 'number' && value !== '') ? parseFloat(value) : value;
-        setFormData({ ...formData, [name]: finalValue });
+        setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -54,34 +49,11 @@ const DataFormModal: FC<DataFormModalProps> = ({ isOpen, onClose, onSubmit, titl
         if (!result.startsWith('ข้อผิดพลาด')) {
             setTimeout(() => {
                 onClose();
+                setMessage('');
             }, 1500);
         }
     };
-
-    const renderField = (field: FormField) => {
-        const commonProps = {
-            id: field.name,
-            name: field.name,
-            value: formData[field.name] ?? '',
-            onChange: handleChange,
-            required: field.required,
-            disabled: field.disabled,
-            placeholder: field.placeholder || '',
-            className: "mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-        };
-        
-        if (field.type === 'select') {
-            return (
-                <select {...commonProps}>
-                    <option value="" disabled>-- กรุณาเลือก --</option>
-                    {field.options?.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-            );
-        }
-        
-        return <input type={field.type} {...commonProps} />;
-    };
-
+    
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4" onClick={onClose}>
             <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
@@ -91,7 +63,29 @@ const DataFormModal: FC<DataFormModalProps> = ({ isOpen, onClose, onSubmit, titl
                     {fields.map(field => (
                         <div key={field.name}>
                             <label htmlFor={field.name} className="block text-sm font-medium text-gray-700">{field.label}</label>
-                            {renderField(field)}
+                            {field.type === 'select' ? (
+                                <select 
+                                    id={field.name}
+                                    name={field.name}
+                                    value={formData[field.name] || ''}
+                                    onChange={handleChange}
+                                    required={field.required}
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="" disabled>-- {field.label} --</option>
+                                    {field.options?.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                </select>
+                            ) : (
+                                <input
+                                    type={field.type}
+                                    id={field.name}
+                                    name={field.name}
+                                    value={formData[field.name] || ''}
+                                    onChange={handleChange}
+                                    required={field.required}
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            )}
                         </div>
                     ))}
                     <div className="flex justify-end space-x-3 pt-2">
