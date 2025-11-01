@@ -1,238 +1,129 @@
-import { GoogleGenAI, FunctionDeclaration, Type, GenerateContentParameters, Content, GenerateContentResponse, FinishReason } from "@google/genai";
-import type { Room, Booking, Guest } from '../types';
+import { GoogleGenAI, FunctionDeclaration, GenerateContentRequest, Type } from '@google/genai';
+import type { Room, Employee, AiChatMessage } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-const model = "gemini-2.5-flash";
+let ai: GoogleGenAI | null = null;
 
-const getRoomAvailabilityFunctionDeclaration: FunctionDeclaration = {
-    name: 'get_room_availability',
-    parameters: {
-        type: Type.OBJECT,
-        description: 'Get availability of rooms for a given date range.',
-        properties: {
-            checkInDate: {
-                type: Type.STRING,
-                description: 'Start date for booking in YYYY-MM-DD format.',
-            },
-            checkOutDate: {
-                type: Type.STRING,
-                description: 'End date for booking in YYYY-MM-DD format.',
-            },
-            roomType: {
-                 type: Type.STRING,
-                 description: 'Type of room to check for (e.g., Single, Double, Suite). Optional.',
-            }
-        },
-        required: ['checkInDate', 'checkOutDate'],
-    },
+const getAi = () => {
+    if (!ai) {
+        if (!process.env.API_KEY) {
+            throw new Error("API_KEY environment variable not set");
+        }
+        ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    }
+    return ai;
 };
 
-const createBookingFunctionDeclaration: FunctionDeclaration = {
-    name: 'create_booking',
+// --- Function Declarations for AI Tools ---
+const addBookingDeclaration: FunctionDeclaration = {
+    name: "addBooking",
+    description: "สร้างการจองห้องพักใหม่สำหรับแขก",
     parameters: {
         type: Type.OBJECT,
-        description: 'Create a new booking for a guest in a specific room for a given date range.',
         properties: {
-            guestName: {
-                type: Type.STRING,
-                description: 'Full name of the guest.',
-            },
-            phoneNumber: {
-                type: Type.STRING,
-                description: 'Phone number of the guest. Optional.',
-            },
-            roomNumber: {
-                type: Type.STRING,
-                description: 'The room number to book.',
-            },
-            checkInDate: {
-                type: Type.STRING,
-                description: 'Check-in date in YYYY-MM-DD format.',
-            },
-            checkOutDate: {
-                type: Type.STRING,
-                description: 'Check-out date in YYYY-MM-DD format.',
-            }
+            guestName: { type: Type.STRING, description: "ชื่อเต็มของแขก" },
+            phone: { type: Type.STRING, description: "เบอร์โทรศัพท์ของแขก" },
+            roomNumber: { type: Type.STRING, description: "หมายเลขห้องที่ต้องการจอง" },
+            checkIn: { type: Type.STRING, description: "วันที่เช็คอินในรูปแบบ YYYY-MM-DD" },
+            checkOut: { type: Type.STRING, description: "วันที่เช็คเอาท์ในรูปแบบ YYYY-MM-DD" },
         },
-        required: ['guestName', 'roomNumber', 'checkInDate', 'checkOutDate'],
-    },
+        required: ["guestName", "phone", "roomNumber", "checkIn", "checkOut"],
+    }
 };
 
-const generateDocumentFunctionDeclaration: FunctionDeclaration = {
-    name: 'generate_document',
+const getAvailableRoomsDeclaration: FunctionDeclaration = {
+    name: "getAvailableRooms",
+    description: "ดึงข้อมูลห้องพักที่ว่างอยู่ในปัจจุบันทั้งหมด",
     parameters: {
         type: Type.OBJECT,
-        description: 'Generate a document such as an invoice, booking confirmation, employee contract, guest welcome letter, lost and found notice, or maintenance request.',
-        properties: {
-            documentType: {
-                type: Type.STRING,
-                description: 'The type of document. Supported values: "Invoice", "Booking Confirmation", "Employee Contract", "Guest Welcome Letter", "Lost and Found Notice", "Maintenance Request".',
-            },
-            referenceId: {
-                type: Type.STRING,
-                description: 'The primary ID for the document. Booking ID for confirmations/welcome letters, Room ID for maintenance, Tenant ID for invoices, Employee ID for contracts. For Lost and Found, use the item name.',
-            },
-            details: {
-                type: Type.STRING,
-                description: 'Optional additional details for the document, such as the specific maintenance issue or the location where an item was found.',
-            }
-        },
-        required: ['documentType', 'referenceId'],
-    },
+        properties: {},
+        required: [],
+    }
 };
 
-const generateReceiptFunctionDeclaration: FunctionDeclaration = {
-    name: 'generate_receipt',
+const addTaskDeclaration: FunctionDeclaration = {
+    name: "addTask",
+    description: "สร้างและมอบหมายงานใหม่ให้กับพนักงาน",
     parameters: {
         type: Type.OBJECT,
-        description: 'Generates a simple, non-tax receipt for a guest booking payment.',
         properties: {
-            bookingId: {
-                type: Type.STRING,
-                description: 'The Booking ID for which to generate the receipt.',
-            },
-            totalAmount: {
-                type: Type.NUMBER,
-                description: 'The total amount paid.',
-            },
+            description: { type: Type.STRING, description: "รายละเอียดของงานที่ต้องทำ" },
+            employeeName: { type: Type.STRING, description: "ชื่อของพนักงานที่รับผิดชอบงาน" },
+            roomNumber: { type: Type.STRING, description: "หมายเลขห้องที่เกี่ยวข้องกับงาน" },
+            dueDate: { type: Type.STRING, description: "วันครบกำหนดส่งงานในรูปแบบ YYYY-MM-DD (ถ้ามี)" },
         },
-        required: ['bookingId', 'totalAmount'],
-    },
-};
+        required: ["description", "employeeName", "roomNumber"],
+    }
+}
 
-const generateTaxInvoiceFunctionDeclaration: FunctionDeclaration = {
-    name: 'generate_tax_invoice',
-    parameters: {
-        type: Type.OBJECT,
-        description: 'Generates an official document that serves as both a receipt and a tax invoice for a guest booking. This is the standard document for all payments.',
-        properties: {
-            bookingId: {
-                type: Type.STRING,
-                description: 'The Booking ID for which to generate the tax invoice.',
-            },
-            totalAmount: {
-                type: Type.NUMBER,
-                description: 'The total amount paid, inclusive of VAT.',
-            },
-        },
-        required: ['bookingId', 'totalAmount'],
-    },
-};
+const tools = [{ functionDeclarations: [addBookingDeclaration, getAvailableRoomsDeclaration, addTaskDeclaration] }];
 
-
-const generateContextPrompt = (context: { rooms: Room[], bookings: Booking[], guests: Guest[] }): string => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const roomStatusCounts = context.rooms.reduce((acc, room) => {
-        acc[room.status] = (acc[room.status] || 0) + 1;
-        return acc;
-    }, {} as Record<Room['status'], number>);
-
-    const todaysCheckIns = context.bookings.filter(b => {
-        const checkIn = new Date(b.checkInDate);
-        checkIn.setHours(0, 0, 0, 0);
-        return checkIn.getTime() === today.getTime() && (b.status === 'Confirmed' || b.status === 'Check-In');
-    }).map(b => {
-        const room = context.rooms.find(r => r.id === b.roomId);
-        const guest = context.guests.find(g => g.id === b.guestId);
-        return `${guest?.name || 'N/A'} (ห้อง ${room?.number || 'N/A'})`;
+const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = (reader.result as string).split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
     });
-
-    const todaysCheckOuts = context.bookings.filter(b => {
-        const checkOut = new Date(b.checkOutDate);
-        checkOut.setHours(0, 0, 0, 0);
-        return checkOut.getTime() === today.getTime() && (b.status === 'Check-In' || b.status === 'Check-Out');
-    }).map(b => {
-        const room = context.rooms.find(r => r.id === b.roomId);
-        const guest = context.guests.find(g => g.id === b.guestId);
-        return `${guest?.name || 'N/A'} (ห้อง ${room?.number || 'N/A'})`;
-    });
-
-    const roomSummary = context.rooms.map(r => `Room ${r.number} (${r.type}, Price: ${r.price}, Status: ${r.status})`).join('\n');
-
-    return `
-You are an AI assistant for a hotel management system called VIPAT HMS.
-Your role is to help the hotel manager with daily tasks.
-You can check room availability, create bookings, and generate documents.
-Always be polite and helpful. Use Thai language for responses unless the user uses English.
-Today's date is ${today.toISOString().split('T')[0]}.
-
---- REAL-TIME HOTEL STATUS ---
-Room Summary:
-- Available: ${roomStatusCounts['Available'] || 0}
-- Occupied: ${roomStatusCounts['Occupied'] || 0}
-- Cleaning: ${roomStatusCounts['Cleaning'] || 0}
-- Monthly Rental: ${roomStatusCounts['Monthly Rental'] || 0}
-
-Today's Check-ins (${todaysCheckIns.length}): ${todaysCheckIns.length > 0 ? todaysCheckIns.join(', ') : 'None'}
-Today's Check-outs (${todaysCheckOuts.length}): ${todaysCheckOuts.length > 0 ? todaysCheckOuts.join(', ') : 'None'}
----
-
-Detailed Room List for reference:
-${roomSummary}
-`.trim();
 };
 
-export const runAiChat = async (history: Content[], context: { rooms: Room[], bookings: Booking[], guests: Guest[] }): Promise<GenerateContentResponse> => {
-    const systemInstruction = generateContextPrompt(context);
+export const sendAiMessage = async (
+    history: AiChatMessage[],
+    newMessage: string,
+    imageFile: File | null
+): Promise<AiChatMessage> => {
+    const genAI = getAi();
 
-    const request: GenerateContentParameters = {
-        model: model,
-        contents: history,
+    const userParts: any[] = [{ text: newMessage }];
+
+    if (imageFile) {
+        const base64Data = await blobToBase64(imageFile);
+        userParts.unshift({
+            inlineData: {
+                mimeType: imageFile.type,
+                data: base64Data
+            }
+        });
+    }
+
+    const contents: any[] = [...history.map(msg => ({...msg, parts: msg.parts.map(p => {
+        // Remove non-serializable imagePreview
+        const { imagePreview, ...rest } = msg as any;
+        return p;
+    }) })), { role: "user", parts: userParts }];
+
+    const request: GenerateContentRequest = {
+        model: 'gemini-2.5-flash',
+        contents,
         config: {
-            systemInstruction: systemInstruction,
-            tools: [{
-                functionDeclarations: [
-                    getRoomAvailabilityFunctionDeclaration, 
-                    createBookingFunctionDeclaration, 
-                    generateDocumentFunctionDeclaration,
-                    generateReceiptFunctionDeclaration,
-                    generateTaxInvoiceFunctionDeclaration
-                ]
-            }],
+            tools: tools
         },
     };
 
     try {
-        const result = await ai.models.generateContent(request);
-        return result;
-    } catch (e) {
-        console.error("Error calling Gemini API:", e);
-        const errorText = "ขออภัยค่ะ เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI Assistant กรุณาลองใหม่อีกครั้ง";
-        const mockCandidates = [{
-            content: {
-                role: 'model',
-                parts: [{ text: errorText }]
-            },
-            finishReason: FinishReason.OTHER,
-            index: 0,
-            safetyRatings: [],
-        }];
-
+        const response = await genAI.models.generateContent(request);
+        const modelResponse = response.candidates?.[0]?.content;
+        
+        if (!modelResponse) {
+             return { role: 'model', parts: [{ text: "ขออภัยค่ะ ไม่สามารถประมวลผลคำขอได้ในขณะนี้" }] };
+        }
+        
         return {
-            text: errorText,
-            candidates: mockCandidates,
-            functionCalls: [],
-            executableCode: undefined,
-            codeExecutionResult: undefined,
-            data: '{}',
+            role: 'model',
+            parts: modelResponse.parts.map(part => {
+                if (part.text) {
+                    return { text: part.text };
+                }
+                if (part.functionCall) {
+                    return { functionCall: { name: part.functionCall.name, args: part.functionCall.args }};
+                }
+                return { text: "" }; // Should not happen
+            })
         };
-    }
-};
-
-export const generateDocumentContent = async (prompt: string): Promise<string> => {
-    try {
-        const result = await ai.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                thinkingConfig: { thinkingBudget: 0 }
-            }
-        });
-        return result.text ?? "Error: AI returned an empty response.";
-    } catch (e) {
-        console.error("Error generating document content:", e);
-        return "Error: Could not generate document content.";
+    } catch (e: any) {
+        console.error("Gemini API Error:", e);
+        return { role: 'model', parts: [{ text: `เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI: ${e.message}` }] };
     }
 };

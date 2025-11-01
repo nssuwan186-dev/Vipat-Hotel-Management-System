@@ -2,148 +2,39 @@ import React, { useState, useMemo, FC, useEffect } from 'react';
 import type { Booking, Guest, Room } from '../types';
 import ConfirmationDialog from './ConfirmationDialog';
 
-const bookingStatusMap: Record<Booking['status'], string> = {
-    'Check-In': 'เช็คอิน',
-    'Check-Out': 'เช็คเอาท์',
-    'Confirmed': 'ยืนยันแล้ว',
-    'Cancelled': 'ยกเลิก'
-};
-
 interface BookingsProps {
     bookings: Booking[];
     guests: Guest[];
     rooms: Room[];
-    addBooking: (guestName: string, phone: string, roomNumber: string, checkIn: string, checkOut: string) => string;
-    updateBooking: (bookingId: string, newDetails: any) => string;
-    deleteBooking: (bookingId: string) => string;
+    updateBooking: (bookingId: string, newDetails: any) => Promise<string>;
+    deleteBooking: (bookingId: string) => Promise<string>;
+    bookingRoomFilter: string | null;
+    setBookingRoomFilter: (roomId: string | null) => void;
 }
 
 const BookingRow: FC<{booking: Booking, guest?: Guest, room?: Room, onEdit: () => void, onDelete: () => void}> = ({ booking, guest, room, onEdit, onDelete }) => {
-    const statusClasses = {
-        'Check-In': 'bg-blue-100 text-blue-800',
-        'Check-Out': 'bg-gray-100 text-gray-800',
-        'Confirmed': 'bg-green-100 text-green-800',
-        'Cancelled': 'bg-red-100 text-red-800'
+    const statusClasses: Record<Booking['status'], string> = {
+        'เช็คอิน': 'bg-blue-100 text-blue-800',
+        'เช็คเอาท์': 'bg-gray-100 text-gray-800',
+        'ยืนยันแล้ว': 'bg-green-100 text-green-800',
+        'ยกเลิก': 'bg-red-100 text-red-800'
     };
     return (
         <tr className="border-b border-gray-200 hover:bg-gray-50 transition-colors duration-200">
             <td className="py-3 px-4 text-sm text-gray-800 font-medium">{guest?.name || 'N/A'}</td>
-            <td className="py-3 px-4 text-sm text-gray-600">{booking.checkInDate.toLocaleDateString('th-TH')}</td>
-            <td className="py-3 px-4 text-sm text-gray-600">{booking.checkOutDate.toLocaleDateString('th-TH')}</td>
-            <td className="py-3 px-4 text-sm text-gray-600">{room?.number || 'N/A'}</td>
+            <td className="py-3 px-4 text-sm text-gray-700">{booking.checkInDate.toLocaleDateString('th-TH')}</td>
+            <td className="py-3 px-4 text-sm text-gray-700">{booking.checkOutDate.toLocaleDateString('th-TH')}</td>
+            <td className="py-3 px-4 text-sm text-gray-700">{room?.number || 'N/A'}</td>
             <td className="py-3 px-4">
                 <span className={`px-3 py-1 text-xs font-semibold rounded-full ${statusClasses[booking.status]}`}>
-                    {bookingStatusMap[booking.status]}
+                    {booking.status}
                 </span>
             </td>
             <td className="py-3 px-4 text-sm">
-                <button onClick={onEdit} className="text-blue-600 hover:text-blue-800 font-semibold transition-colors">แก้ไข</button>
-                <button onClick={onDelete} className="text-red-600 hover:text-red-800 font-semibold ml-4 transition-colors">ลบ</button>
+                <button onClick={onEdit} className="text-blue-600 hover:text-blue-800 font-medium transition-colors">แก้ไข</button>
+                <button onClick={onDelete} className="text-red-600 hover:text-red-800 font-medium ml-4 transition-colors">ลบ</button>
             </td>
         </tr>
-    );
-}
-
-const CalendarView: FC<{bookings: Booking[], rooms: Room[]}> = ({bookings, rooms}) => {
-    const [currentDate, setCurrentDate] = useState(new Date());
-
-    const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-    const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-    const weekDays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-
-    const calendarDays = useMemo(() => {
-        const days = [];
-        for (let i = 0; i < firstDayOfMonth; i++) {
-            days.push({ key: `empty-${i}`, date: null, bookings: [] });
-        }
-        for (let day = 1; day <= daysInMonth; day++) {
-            const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-            const dayBookings = bookings.filter(b => {
-                const checkIn = new Date(b.checkInDate);
-                checkIn.setHours(0,0,0,0);
-                const checkOut = new Date(b.checkOutDate);
-                checkOut.setHours(0,0,0,0);
-                return date >= checkIn && date < checkOut;
-            });
-            days.push({ key: `day-${day}`, date, bookings: dayBookings });
-        }
-        return days;
-    }, [currentDate, bookings, daysInMonth, firstDayOfMonth]);
-
-    return (
-        <div>
-            <div className="flex justify-between items-center mb-4">
-                <button onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)))} className="px-4 py-2 bg-gray-200 rounded-lg">&lt;</button>
-                <h3 className="text-lg font-semibold">{currentDate.toLocaleString('th-TH', { month: 'long', year: 'numeric' })}</h3>
-                <button onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)))} className="px-4 py-2 bg-gray-200 rounded-lg">&gt;</button>
-            </div>
-            <div className="grid grid-cols-7 gap-1 text-center text-sm font-semibold text-gray-600 mb-2">
-                {weekDays.map(day => <div key={day}>{day}</div>)}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-                {calendarDays.map(day => (
-                    <div key={day.key} className={`h-24 p-1 border border-gray-200 rounded-md ${day.date ? 'bg-white' : 'bg-gray-50'}`}>
-                        {day.date && <span className="text-xs font-semibold">{day.date.getDate()}</span>}
-                        <div className="mt-1 space-y-0.5 overflow-y-auto max-h-16">
-                            {day.bookings.map(b => {
-                                const room = rooms.find(r => r.id === b.roomId);
-                                return <div key={b.id} className="text-xs bg-blue-100 text-blue-800 rounded px-1 truncate">ห้อง {room?.number}</div>
-                            })}
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-const NewBookingForm: FC<{addBooking: BookingsProps['addBooking']}> = ({addBooking}) => {
-    const [guestName, setGuestName] = useState('');
-    const [phone, setPhone] = useState('');
-    const [roomNumber, setRoomNumber] = useState('');
-    const [checkIn, setCheckIn] = useState('');
-    const [checkOut, setCheckOut] = useState('');
-    const [message, setMessage] = useState('');
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        const result = addBooking(guestName, phone, roomNumber, checkIn, checkOut);
-        setMessage(result);
-        if(result.includes("สำเร็จแล้ว")){
-            setGuestName('');
-            setPhone('');
-            setRoomNumber('');
-            setCheckIn('');
-            setCheckOut('');
-        }
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-3 max-w-lg mx-auto">
-            <h3 className="text-lg font-semibold">สร้างการจองใหม่</h3>
-            {message && <p className={`p-3 rounded-lg ${message.startsWith('ข้อผิดพลาด') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{message}</p>}
-            <div>
-                <label className="block text-sm font-medium text-gray-700">ชื่อผู้เข้าพัก</label>
-                <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"/>
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700">เบอร์โทรศัพท์</label>
-                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"/>
-            </div>
-             <div>
-                <label className="block text-sm font-medium text-gray-700">หมายเลขห้อง</label>
-                <input type="text" value={roomNumber} onChange={e => setRoomNumber(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"/>
-            </div>
-             <div>
-                <label className="block text-sm font-medium text-gray-700">วันที่เช็คอิน</label>
-                <input type="date" value={checkIn} onChange={e => setCheckIn(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"/>
-            </div>
-             <div>
-                <label className="block text-sm font-medium text-gray-700">วันที่เช็คเอาท์</label>
-                <input type="date" value={checkOut} onChange={e => setCheckOut(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"/>
-            </div>
-            <button type="submit" className="w-full py-2 px-4 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">สร้างการจอง</button>
-        </form>
     );
 }
 
@@ -152,7 +43,7 @@ interface EditBookingModalProps {
     guests: Guest[];
     rooms: Room[];
     onClose: () => void;
-    onUpdate: (bookingId: string, details: any) => string;
+    onUpdate: (bookingId: string, details: any) => Promise<string>;
 }
 
 const EditBookingModal: FC<EditBookingModalProps> = ({ booking, guests, rooms, onClose, onUpdate }) => {
@@ -181,9 +72,9 @@ const EditBookingModal: FC<EditBookingModalProps> = ({ booking, guests, rooms, o
         setFormState({ ...formState, [e.target.name]: e.target.value });
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const result = onUpdate(booking.id, {
+        const result = await onUpdate(booking.id, {
             guestName: formState.guestName,
             phone: formState.phone,
             roomNumber: formState.roomNumber,
@@ -233,18 +124,23 @@ const EditBookingModal: FC<EditBookingModalProps> = ({ booking, guests, rooms, o
 };
 
 
-const Bookings: React.FC<BookingsProps> = ({ bookings, guests, rooms, addBooking, updateBooking, deleteBooking }) => {
-    const [activeTab, setActiveTab] = useState('รายการจองทั้งหมด');
+const Bookings: React.FC<BookingsProps> = ({ bookings, guests, rooms, updateBooking, deleteBooking, bookingRoomFilter, setBookingRoomFilter }) => {
     const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
     const [bookingToDelete, setBookingToDelete] = useState<Booking | null>(null);
     const [sortOption, setSortOption] = useState('checkIn-desc');
     const [message, setMessage] = useState('');
 
-    const tabs = ['รายการจองทั้งหมด', 'ปฏิทิน', 'สร้างการจองใหม่'];
+    const roomForFilter = useMemo(() => {
+        if (!bookingRoomFilter) return null;
+        return rooms.find(r => r.id === bookingRoomFilter);
+    }, [bookingRoomFilter, rooms]);
 
     const sortedBookings = useMemo(() => {
-        const sortableBookings = [...bookings];
-        sortableBookings.sort((a, b) => {
+        const filtered = bookingRoomFilter 
+            ? bookings.filter(b => b.roomId === bookingRoomFilter)
+            : [...bookings];
+
+        filtered.sort((a, b) => {
           switch (sortOption) {
             case 'checkIn-asc':
               return new Date(a.checkInDate).getTime() - new Date(b.checkInDate).getTime();
@@ -261,97 +157,76 @@ const Bookings: React.FC<BookingsProps> = ({ bookings, guests, rooms, addBooking
               return new Date(b.checkInDate).getTime() - new Date(a.checkInDate).getTime();
           }
         });
-        return sortableBookings;
-      }, [bookings, sortOption]);
+        return filtered;
+      }, [bookings, sortOption, bookingRoomFilter]);
 
-    const handleDeleteBooking = () => {
+    const handleDeleteBooking = async () => {
         if (bookingToDelete) {
-            const result = deleteBooking(bookingToDelete.id);
+            const result = await deleteBooking(bookingToDelete.id);
             setMessage(result);
             setBookingToDelete(null);
             setTimeout(() => setMessage(''), 3000);
         }
     };
 
-    const renderTabContent = () => {
-        switch (activeTab) {
-            case 'รายการจองทั้งหมด':
-                return (
-                    <div>
-                        <div className="flex justify-end mb-4">
-                             <select
-                                value={sortOption}
-                                onChange={(e) => setSortOption(e.target.value)}
-                                className="px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                aria-label="Sort bookings"
-                            >
-                                <option value="checkIn-desc">เรียงตามวันเช็คอิน (ใหม่สุด)</option>
-                                <option value="checkIn-asc">เรียงตามวันเช็คอิน (เก่าสุด)</option>
-                                <option value="checkOut-desc">เรียงตามวันเช็คเอาท์ (ใหม่สุด)</option>
-                                <option value="checkOut-asc">เรียงตามวันเช็คเอาท์ (เก่าสุด)</option>
-                                <option value="price-desc">เรียงตามราคา (สูงสุด-ต่ำสุด)</option>
-                                <option value="price-asc">เรียงตามราคา (ต่ำสุด-สูงสุด)</option>
-                            </select>
-                        </div>
-                         {message && <p className="p-3 my-2 rounded-lg bg-green-100 text-green-700">{message}</p>}
-                        <div className="overflow-x-auto">
-                            <table className="w-full whitespace-nowrap">
-                                <thead className="bg-gray-100/70">
-                                    <tr>
-                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">ผู้เข้าพัก</th>
-                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">เช็คอิน</th>
-                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">เช็คเอาท์</th>
-                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">ห้อง</th>
-                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">สถานะ</th>
-                                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">การกระทำ</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {sortedBookings.map(b => (
-                                        <BookingRow 
-                                            key={b.id} 
-                                            booking={b} 
-                                            guest={guests.find(g => g.id === b.guestId)} 
-                                            room={rooms.find(r => r.id === b.roomId)}
-                                            onEdit={() => setEditingBooking(b)}
-                                            onDelete={() => setBookingToDelete(b)}
-                                        />
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
-            case 'ปฏิทิน':
-                return <CalendarView bookings={bookings} rooms={rooms} />;
-            case 'สร้างการจองใหม่':
-                return <NewBookingForm addBooking={addBooking} />;
-            default:
-                return null;
-        }
-    }
-
     return (
         <>
-            <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-lg">
-                <div className="border-b border-gray-200 mb-6">
-                    <nav className="-mb-px flex space-x-6">
-                        {tabs.map(tab => (
-                            <button
-                                key={tab}
-                                onClick={() => setActiveTab(tab)}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors duration-200 ${
-                                    activeTab === tab
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                            >
-                                {tab}
-                            </button>
-                        ))}
-                    </nav>
+            <div>
+                {roomForFilter && (
+                    <div className="p-3 mb-4 bg-blue-50 border border-blue-200 rounded-lg flex justify-between items-center">
+                        <p className="text-sm text-blue-800">
+                            <span className="font-semibold">กำลังแสดงการจองสำหรับห้อง:</span> {roomForFilter.number} ({roomForFilter.type})
+                        </p>
+                        <button
+                            onClick={() => setBookingRoomFilter(null)}
+                            className="px-3 py-1 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600"
+                        >
+                            ล้างตัวกรอง
+                        </button>
+                    </div>
+                )}
+                <div className="flex justify-end mb-4">
+                        <select
+                        value={sortOption}
+                        onChange={(e) => setSortOption(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        aria-label="Sort bookings"
+                    >
+                        <option value="checkIn-desc">เรียงตามวันเช็คอิน (ใหม่สุด)</option>
+                        <option value="checkIn-asc">เรียงตามวันเช็คอิน (เก่าสุด)</option>
+                        <option value="checkOut-desc">เรียงตามวันเช็คเอาท์ (ใหม่สุด)</option>
+                        <option value="checkOut-asc">เรียงตามวันเช็คเอาท์ (เก่าสุด)</option>
+                        <option value="price-desc">เรียงตามราคา (สูงสุด-ต่ำสุด)</option>
+                        <option value="price-asc">เรียงตามราคา (ต่ำสุด-สูงสุด)</option>
+                    </select>
                 </div>
-                <div>{renderTabContent()}</div>
+                    {message && <p className="p-3 my-2 rounded-lg bg-green-100 text-green-700">{message}</p>}
+                <div className="overflow-x-auto">
+                    <table className="w-full whitespace-nowrap">
+                        <thead className="bg-gray-100/70">
+                            <tr>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">ผู้เข้าพัก</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">เช็คอิน</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">เช็คเอาท์</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">ห้อง</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">สถานะ</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">การกระทำ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sortedBookings.map(b => (
+                                <BookingRow 
+                                    key={b.id} 
+                                    booking={b} 
+                                    guest={guests.find(g => g.id === b.guestId)} 
+                                    room={rooms.find(r => r.id === b.roomId)}
+                                    onEdit={() => setEditingBooking(b)}
+                                    onDelete={() => setBookingToDelete(b)}
+                                />
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
             {editingBooking && (
                 <EditBookingModal

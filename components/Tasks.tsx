@@ -10,7 +10,7 @@ interface TaskCardProps {
 
 const TaskCard: React.FC<TaskCardProps> = ({ task, employee, room, onStatusChange }) => {
     
-    const statusOptions: TaskStatus[] = ['To Do', 'In Progress', 'Done'];
+    const statusOptions: TaskStatus[] = ['ต้องทำ', 'กำลังทำ', 'เสร็จแล้ว'];
 
     const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         onStatusChange(task.id, e.target.value as TaskStatus);
@@ -70,7 +70,7 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, employees,
         }
     };
     
-    const activeEmployees = employees.filter(e => e.status === 'Active');
+    const activeEmployees = employees.filter(e => e.status === 'ทำงานอยู่');
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4" onClick={onClose}>
@@ -126,33 +126,100 @@ interface TasksProps {
 
 const Tasks: React.FC<TasksProps> = ({ tasks, employees, rooms, addTask, updateTaskStatus }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [statusFilter, setStatusFilter] = useState<TaskStatus | 'All'>('All');
+    const [employeeFilter, setEmployeeFilter] = useState<string>('All');
+    const [sortOption, setSortOption] = useState<string>('createdAt-desc');
 
     const taskColumns = useMemo(() => {
-        const sortedTasks = tasks.sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime());
+        let filteredTasks = [...tasks];
+
+        // Apply filters
+        if (statusFilter !== 'All') {
+            filteredTasks = filteredTasks.filter(t => t.status === statusFilter);
+        }
+        if (employeeFilter !== 'All') {
+            filteredTasks = filteredTasks.filter(t => t.assignedTo === employeeFilter);
+        }
+
+        // Apply sorting
+        filteredTasks.sort((a, b) => {
+            switch (sortOption) {
+                case 'createdAt-asc':
+                    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+                case 'dueDate-asc':
+                    if (!a.dueDate) return 1;
+                    if (!b.dueDate) return -1;
+                    return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+                case 'dueDate-desc':
+                    if (!a.dueDate) return 1;
+                    if (!b.dueDate) return -1;
+                    return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+                case 'createdAt-desc':
+                default:
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            }
+        });
+
+        // Group into columns
         return {
-            'To Do': sortedTasks.filter(t => t.status === 'To Do'),
-            'In Progress': sortedTasks.filter(t => t.status === 'In Progress'),
-            'Done': sortedTasks.filter(t => t.status === 'Done'),
+            'ต้องทำ': filteredTasks.filter(t => t.status === 'ต้องทำ'),
+            'กำลังทำ': filteredTasks.filter(t => t.status === 'กำลังทำ'),
+            'เสร็จแล้ว': filteredTasks.filter(t => t.status === 'เสร็จแล้ว'),
         };
-    }, [tasks]);
+    }, [tasks, statusFilter, employeeFilter, sortOption]);
     
     const columnTitles: Record<TaskStatus, {title: string, textColor: string, countColor: string}> = {
-        'To Do': { title: 'ต้องทำ', textColor: 'text-red-600', countColor: 'bg-red-100 text-red-700' },
-        'In Progress': { title: 'กำลังทำ', textColor: 'text-yellow-600', countColor: 'bg-yellow-100 text-yellow-700' },
-        'Done': { title: 'เสร็จแล้ว', textColor: 'text-green-600', countColor: 'bg-green-100 text-green-700' },
+        'ต้องทำ': { title: 'ต้องทำ', textColor: 'text-red-600', countColor: 'bg-red-100 text-red-700' },
+        'กำลังทำ': { title: 'กำลังทำ', textColor: 'text-yellow-600', countColor: 'bg-yellow-100 text-yellow-700' },
+        'เสร็จแล้ว': { title: 'เสร็จแล้ว', textColor: 'text-green-600', countColor: 'bg-green-100 text-green-700' },
     }
+
+    const activeEmployees = useMemo(() => employees.filter(e => e.status === 'ทำงานอยู่'), [employees]);
+    const columnsToDisplay = statusFilter === 'All' ? (Object.keys(columnTitles) as TaskStatus[]) : [statusFilter];
+    const gridClass = statusFilter === 'All' ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1';
 
     return (
         <>
             <div className="p-4 sm:p-6 bg-white rounded-2xl shadow-lg">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold text-gray-800">กระดานจัดการงาน</h2>
-                    <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                    <h2 className="text-xl font-bold text-gray-800 shrink-0">กระดานจัดการงาน</h2>
+                    <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 w-full sm:w-auto">
                         + เพิ่มงานใหม่
                     </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                   {(Object.keys(columnTitles) as TaskStatus[]).map(status => (
+
+                <div className="p-4 mb-6 bg-gray-50 rounded-xl border">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label htmlFor="status-filter" className="block text-sm font-medium text-gray-700 mb-1">สถานะ</label>
+                            <select id="status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value as TaskStatus | 'All')} className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                <option value="All">ทั้งหมด</option>
+                                <option value="ต้องทำ">ต้องทำ</option>
+                                <option value="กำลังทำ">กำลังทำ</option>
+                                <option value="เสร็จแล้ว">เสร็จแล้ว</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="employee-filter" className="block text-sm font-medium text-gray-700 mb-1">ผู้รับผิดชอบ</label>
+                            <select id="employee-filter" value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                <option value="All">พนักงานทั้งหมด</option>
+                                {activeEmployees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                            </select>
+                        </div>
+                         <div>
+                            <label htmlFor="sort-option" className="block text-sm font-medium text-gray-700 mb-1">เรียงตาม</label>
+                            <select id="sort-option" value={sortOption} onChange={e => setSortOption(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                <option value="createdAt-desc">วันที่สร้าง (ใหม่สุด)</option>
+                                <option value="createdAt-asc">วันที่สร้าง (เก่าสุด)</option>
+                                <option value="dueDate-asc">วันครบกำหนด (ใกล้สุด)</option>
+                                <option value="dueDate-desc">วันครบกำหนด (ไกลสุด)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div className={`grid ${gridClass} gap-6`}>
+                   {columnsToDisplay.map(status => (
                         <div key={status} className="bg-gray-100/70 p-4 rounded-xl flex flex-col">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className={`font-semibold text-md ${columnTitles[status].textColor}`}>
